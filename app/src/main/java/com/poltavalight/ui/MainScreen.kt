@@ -29,6 +29,27 @@ fun MainScreen(
     isLoading: Boolean,
     onRefresh: () -> Unit
 ) {
+    // Pre-calculate emergency events and schedule blocks outside LazyColumn
+    val gavEvents = remember(checkResult) {
+        val list = checkResult?.emergencies ?: emptyList()
+        val filtered = mutableListOf<EmergencyEvent>()
+        for (event in list) {
+            if (event.typeId == 1 || event.typeId == 2) {
+                filtered.add(event)
+            }
+        }
+        filtered
+    }
+
+    val blocks = remember(checkResult) {
+        val slots = checkResult?.schedule?.slots
+        if (slots != null && slots.isNotEmpty()) {
+            groupSlotsIntoBlocks(slots)
+        } else {
+            emptyList()
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -75,13 +96,8 @@ fun MainScreen(
             }
 
             // Emergency banner
-            if (checkResult != null && checkResult.emergencies.isNotEmpty()) {
-                val gavEvents = checkResult.emergencies.filter {
-                    it.typeId == 1 || it.typeId == 2
-                }
-                if (gavEvents.isNotEmpty()) {
-                    item { EmergencyBanner(gavEvents) }
-                }
+            if (gavEvents.isNotEmpty()) {
+                item { EmergencyBanner(gavEvents) }
             }
 
             // Current status
@@ -95,7 +111,7 @@ fun MainScreen(
             }
 
             // Timeline
-            if (checkResult?.schedule != null && checkResult.schedule.slots.isNotEmpty()) {
+            if (blocks.isNotEmpty()) {
                 item {
                     Text(
                         "Графік на сьогодні — Черга 6.1",
@@ -105,8 +121,6 @@ fun MainScreen(
                     )
                 }
 
-                // Group slots into continuous blocks
-                val blocks = groupSlotsIntoBlocks(checkResult.schedule.slots)
                 items(blocks) { block ->
                     ScheduleBlockRow(block)
                 }
