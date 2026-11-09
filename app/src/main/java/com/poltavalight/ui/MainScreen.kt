@@ -17,7 +17,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.poltavalight.data.*
+import com.poltavalight.data.CheckResult
+import com.poltavalight.data.DailySchedule
+import com.poltavalight.data.EmergencyEvent
+import com.poltavalight.data.SlotStatus
+import com.poltavalight.data.TimeSlot
 import com.poltavalight.ui.theme.*
 import java.util.Calendar
 
@@ -31,7 +35,7 @@ fun MainScreen(
 ) {
     // Pre-calculate emergency events and schedule blocks outside LazyColumn
     val gavEvents = remember(checkResult) {
-        val list = checkResult?.emergencies ?: emptyList()
+        val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList<EmergencyEvent>()
         val filtered = mutableListOf<EmergencyEvent>()
         for (event in list) {
             if (event.typeId == 1 || event.typeId == 2) {
@@ -46,7 +50,7 @@ fun MainScreen(
         if (slots != null && slots.isNotEmpty()) {
             groupSlotsIntoBlocks(slots)
         } else {
-            emptyList()
+            emptyList<ScheduleBlock>()
         }
     }
 
@@ -281,7 +285,7 @@ data class ScheduleBlock(
 )
 
 fun groupSlotsIntoBlocks(slots: List<TimeSlot>): List<ScheduleBlock> {
-    if (slots.isEmpty()) return emptyList()
+    if (slots.isEmpty()) return emptyList<ScheduleBlock>()
 
     val blocks = mutableListOf<ScheduleBlock>()
     var currentStatus = slots.first().status
