@@ -1,6 +1,7 @@
 package com.poltavalight.data
 
 import org.json.JSONArray
+import org.json.JSONObject
 import org.jsoup.Jsoup
 import java.security.MessageDigest
 
@@ -92,7 +93,14 @@ class ScheduleParser {
         val events = mutableListOf<EmergencyEvent>()
 
         try {
-            val arr = JSONArray(json)
+            val trimmed = json.trim()
+            val arr = if (trimmed.startsWith("{")) {
+                val root = JSONObject(trimmed)
+                root.optJSONArray("value") ?: JSONArray()
+            } else {
+                JSONArray(trimmed)
+            }
+
             for (i in 0 until arr.length()) {
                 val obj = arr.getJSONObject(i)
                 events.add(
@@ -123,7 +131,6 @@ class ScheduleParser {
      */
     fun hasActiveEmergency(events: List<EmergencyEvent>): Boolean {
         return events.any { it.typeId == 1 || it.typeId == 2 }
-        // typeId 1 = ГАВ, typeId 2 = СГАВ
     }
 
     private fun md5(input: String): String {
