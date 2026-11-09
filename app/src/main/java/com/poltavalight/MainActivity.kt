@@ -109,7 +109,7 @@ class MainActivity : ComponentActivity() {
                     data = Uri.parse("package:$packageName")
                 }
                 startActivity(intent)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
                 // Some devices may not support this intent
             }
         }
