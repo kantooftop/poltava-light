@@ -1,0 +1,18 @@
+<resources>
+    <string name="app_name">Полтава Світло</string>
+    <string name="queue_label">Черга 6.1</string>
+    <string name="status_on">Світло є ✅</string>
+    <string name="status_off">Світла немає ⛔</string>
+    <string name="status_switching">Перемикання ⚠️</string>
+    <string name="status_unknown">Невідомо</string>
+    <string name="last_update">Останнє оновлення: %s</string>
+    <string name="emergency_gav">🚨 ГАВ — Аварійне відключення!</string>
+    <string name="emergency_sgav">🚨 СГАВ — Спеціальне аварійне відключення!</string>
+    <string name="no_emergency">Аварійних відключень немає</string>
+    <string name="schedule_title">Графік на сьогодні</string>
+    <string name="notification_channel_schedule">Зміна графіку</string>
+    <string name="notification_channel_emergency">Аварійні відключення</string>
+    <string name="notification_channel_reminder">Нагадування</string>
+    <string name="refresh">Оновити</string>
+    <string name="error_network">Помилка з\'єднання. Перевірте інтернет.</string>
+</resources>
