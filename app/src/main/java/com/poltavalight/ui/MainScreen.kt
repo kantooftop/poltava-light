@@ -37,6 +37,7 @@ fun MainScreen(
 ) {
     val dark = isSystemInDarkTheme()
 
+    // Pre-calculate emergency events and schedule blocks
     val gavEvents = remember(checkResult) {
         val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList<EmergencyEvent>()
         val filtered = mutableListOf<EmergencyEvent>()
@@ -70,6 +71,7 @@ fun MainScreen(
                             fontWeight = FontWeight.Bold,
                             fontSize = 22.sp
                         )
+                        // Pixel-style queue pill
                         Surface(
                             shape = CircleShape,
                             color = MaterialTheme.colorScheme.primaryContainer,
@@ -90,6 +92,7 @@ fun MainScreen(
                     titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 actions = {
+                    // Pixel pill button for refresh
                     FilledTonalIconButton(
                         onClick = onRefresh,
                         enabled = !isLoading,
@@ -116,6 +119,7 @@ fun MainScreen(
             verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
+            // Error Card
             if (checkResult?.error != null) {
                 item {
                     Surface(
@@ -139,19 +143,23 @@ fun MainScreen(
                 }
             }
 
+            // Emergency Alert Banner (ГАВ / СГАВ)
             if (gavEvents.isNotEmpty()) {
                 item { PixelEmergencyBanner(gavEvents) }
             }
 
+            // Pixel "At a Glance" Hero Card
             if (checkResult?.schedule != null) {
                 item {
                     PixelHeroCard(
                         schedule = checkResult.schedule,
-                        dark = dark
+                        dark = dark,
+                        hasEmergency = gavEvents.isNotEmpty()
                     )
                 }
             }
 
+            // Daily Summary Chip
             if (checkResult?.schedule != null && checkResult.schedule.date.isNotBlank()) {
                 item {
                     Row(
@@ -181,12 +189,14 @@ fun MainScreen(
                 }
             }
 
+            // Timeline Blocks
             if (blocks.isNotEmpty()) {
                 items(blocks) { block ->
                     PixelTimelineBlock(block = block, dark = dark)
                 }
             }
 
+            // Footer info
             item {
                 Text(
                     text = "Останнє оновлення: $lastCheckTime\nАТ «Полтаваобленерго»",
@@ -203,19 +213,28 @@ fun MainScreen(
     }
 }
 
+/**
+ * Pixel-style Hero Card with status, next change prediction and Material You curves
+ */
 @Composable
-fun PixelHeroCard(schedule: DailySchedule, dark: Boolean) {
+fun PixelHeroCard(
+    schedule: DailySchedule,
+    dark: Boolean,
+    hasEmergency: Boolean = false
+) {
     val cal = Calendar.getInstance()
     val currentHour = cal.get(Calendar.HOUR_OF_DAY)
     val currentMinute = cal.get(Calendar.MINUTE)
     val nowMinutes = currentHour * 60 + currentMinute
 
+    // Find current slot
     val currentSlot = schedule.slots.find { slot ->
         val slotStart = slot.startHour * 60 + slot.startMinute
         val slotEnd = slotStart + 30
         nowMinutes in slotStart until slotEnd
     }
 
+    // Find next change
     val nextDifferentSlot = schedule.slots.find { slot ->
         val slotStart = slot.startHour * 60 + slot.startMinute
         slotStart > nowMinutes && slot.status != (currentSlot?.status ?: SlotStatus.UNKNOWN)
@@ -276,8 +295,24 @@ fun PixelHeroCard(schedule: DailySchedule, dark: Boolean) {
                         fontWeight = FontWeight.ExtraBold,
                         color = MaterialTheme.colorScheme.onSurface
                     )
+                    if (hasEmergency) {
+                        Spacer(Modifier.height(6.dp))
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.error
+                        ) {
+                            Text(
+                                text = "⚠️ Діє ГАВ: аварійне відключення!",
+                                color = MaterialTheme.colorScheme.onError,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 }
 
+                // Status Icon Bubble
                 Surface(
                     shape = CircleShape,
                     color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
@@ -291,6 +326,7 @@ fun PixelHeroCard(schedule: DailySchedule, dark: Boolean) {
 
             Spacer(Modifier.height(16.dp))
 
+            // Time & Next Change info
             Surface(
                 shape = RoundedCornerShape(16.dp),
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
@@ -336,6 +372,9 @@ fun PixelHeroCard(schedule: DailySchedule, dark: Boolean) {
     }
 }
 
+/**
+ * Pixel Emergency Banner with distinct alert styling
+ */
 @Composable
 fun PixelEmergencyBanner(events: List<EmergencyEvent>) {
     Surface(
@@ -377,6 +416,9 @@ fun PixelEmergencyBanner(events: List<EmergencyEvent>) {
     }
 }
 
+/**
+ * Timeline block with Pixel card aesthetic
+ */
 @Composable
 fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
     val cal = Calendar.getInstance()
@@ -433,6 +475,7 @@ fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
+            // Status Dot
             Box(
                 modifier = Modifier
                     .size(12.dp)
@@ -442,6 +485,7 @@ fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
 
             Spacer(Modifier.width(14.dp))
 
+            // Time text
             Text(
                 text = timeRange,
                 fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
@@ -450,6 +494,7 @@ fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
                 modifier = Modifier.width(120.dp)
             )
 
+            // Status Badge
             Text(
                 text = label,
                 fontSize = 14.sp,
@@ -478,6 +523,9 @@ fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
 
 data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
+/**
+ * Group consecutive slots with the same status into blocks.
+ */
 data class ScheduleBlock(
     val startHour: Int,
     val startMinute: Int,
