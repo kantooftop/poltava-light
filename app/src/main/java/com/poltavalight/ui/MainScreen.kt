@@ -2,6 +2,7 @@ package com.poltavalight.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -11,6 +12,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -33,7 +35,8 @@ fun MainScreen(
     isLoading: Boolean,
     onRefresh: () -> Unit
 ) {
-    // Pre-calculate emergency events and schedule blocks outside LazyColumn
+    val dark = isSystemInDarkTheme()
+
     val gavEvents = remember(checkResult) {
         val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList<EmergencyEvent>()
         val filtered = mutableListOf<EmergencyEvent>()
@@ -58,88 +61,142 @@ fun MainScreen(
         topBar = {
             TopAppBar(
                 title = {
-                    Text("⚡ Полтава Світло", fontWeight = FontWeight.Bold)
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(
+                            text = "Полтава Світло",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.primaryContainer,
+                            modifier = Modifier.padding(start = 4.dp)
+                        ) {
+                            Text(
+                                text = "Черга 6.1",
+                                color = MaterialTheme.colorScheme.onPrimaryContainer,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = PrimaryBlue,
-                    titleContentColor = Color.White
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.onSurface
                 ),
                 actions = {
-                    TextButton(onClick = onRefresh, enabled = !isLoading) {
+                    FilledTonalIconButton(
+                        onClick = onRefresh,
+                        enabled = !isLoading,
+                        shape = CircleShape,
+                        colors = IconButtonDefaults.filledTonalIconButtonColors(
+                            containerColor = MaterialTheme.colorScheme.secondaryContainer
+                        )
+                    ) {
                         Text(
                             if (isLoading) "⏳" else "🔄",
-                            fontSize = 20.sp
+                            fontSize = 18.sp
                         )
                     }
                 }
             )
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.surface
     ) { padding ->
         LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(horizontal = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+                .padding(horizontal = 18.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
             contentPadding = PaddingValues(vertical = 12.dp)
         ) {
-            // Error state
             if (checkResult?.error != null) {
                 item {
-                    Card(
-                        colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
-                        shape = RoundedCornerShape(12.dp)
+                    Surface(
+                        shape = RoundedCornerShape(24.dp),
+                        color = MaterialTheme.colorScheme.errorContainer,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
-                        Text(
-                            text = "⚠️ ${checkResult.error}",
-                            modifier = Modifier.padding(16.dp),
-                            color = Color(0xFFE65100)
-                        )
+                        Row(
+                            modifier = Modifier.padding(18.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text("⚠️", fontSize = 24.sp)
+                            Spacer(Modifier.width(12.dp))
+                            Text(
+                                text = checkResult.error,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                fontSize = 14.sp
+                            )
+                        }
                     }
                 }
             }
 
-            // Emergency banner
             if (gavEvents.isNotEmpty()) {
-                item { EmergencyBanner(gavEvents) }
+                item { PixelEmergencyBanner(gavEvents) }
             }
 
-            // Current status
             if (checkResult?.schedule != null) {
-                item { CurrentStatusCard(checkResult.schedule) }
-            }
-
-            // Summary
-            if (checkResult?.schedule != null) {
-                item { ScheduleSummaryCard(checkResult.schedule) }
-            }
-
-            // Timeline
-            if (blocks.isNotEmpty()) {
                 item {
-                    Text(
-                        "Графік на сьогодні — Черга 6.1",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 18.sp,
-                        modifier = Modifier.padding(top = 4.dp)
+                    PixelHeroCard(
+                        schedule = checkResult.schedule,
+                        dark = dark
                     )
                 }
+            }
 
-                items(blocks) { block ->
-                    ScheduleBlockRow(block)
+            if (checkResult?.schedule != null && checkResult.schedule.date.isNotBlank()) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Графік відключень",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 18.sp,
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = CircleShape,
+                            color = MaterialTheme.colorScheme.surfaceVariant
+                        ) {
+                            Text(
+                                text = checkResult.schedule.date,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
                 }
             }
 
-            // Last update info
+            if (blocks.isNotEmpty()) {
+                items(blocks) { block ->
+                    PixelTimelineBlock(block = block, dark = dark)
+                }
+            }
+
             item {
                 Text(
-                    text = "Останнє оновлення: $lastCheckTime",
+                    text = "Останнє оновлення: $lastCheckTime\nАТ «Полтаваобленерго»",
                     fontSize = 12.sp,
-                    color = SubText,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(top = 8.dp, bottom = 16.dp),
-                    textAlign = TextAlign.Center
+                        .padding(top = 8.dp, bottom = 24.dp),
+                    textAlign = TextAlign.Center,
+                    lineHeight = 18.sp
                 )
             }
         }
@@ -147,105 +204,271 @@ fun MainScreen(
 }
 
 @Composable
-fun EmergencyBanner(events: List<EmergencyEvent>) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = EmergencyBg),
-        shape = RoundedCornerShape(12.dp),
+fun PixelHeroCard(schedule: DailySchedule, dark: Boolean) {
+    val cal = Calendar.getInstance()
+    val currentHour = cal.get(Calendar.HOUR_OF_DAY)
+    val currentMinute = cal.get(Calendar.MINUTE)
+    val nowMinutes = currentHour * 60 + currentMinute
+
+    val currentSlot = schedule.slots.find { slot ->
+        val slotStart = slot.startHour * 60 + slot.startMinute
+        val slotEnd = slotStart + 30
+        nowMinutes in slotStart until slotEnd
+    }
+
+    val nextDifferentSlot = schedule.slots.find { slot ->
+        val slotStart = slot.startHour * 60 + slot.startMinute
+        slotStart > nowMinutes && slot.status != (currentSlot?.status ?: SlotStatus.UNKNOWN)
+    }
+
+    val (statusTitle, statusColor, containerColor, icon) = when (currentSlot?.status) {
+        SlotStatus.ON -> Quadruple(
+            "Світло є",
+            if (dark) DarkPowerOn else PowerOn,
+            if (dark) DarkPowerOnContainer.copy(alpha = 0.35f) else PowerOnContainer.copy(alpha = 0.5f),
+            "💡"
+        )
+        SlotStatus.OFF -> Quadruple(
+            "Світла немає",
+            if (dark) DarkPowerOff else PowerOff,
+            if (dark) DarkPowerOffContainer.copy(alpha = 0.35f) else PowerOffContainer.copy(alpha = 0.5f),
+            "🌙"
+        )
+        SlotStatus.SWITCHING -> Quadruple(
+            "Перемикання",
+            if (dark) DarkPowerSwitching else PowerSwitching,
+            if (dark) DarkPowerSwitchingContainer.copy(alpha = 0.35f) else PowerSwitchingContainer.copy(alpha = 0.5f),
+            "⚡"
+        )
+        else -> Quadruple(
+            "Статус невідомий",
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            MaterialTheme.colorScheme.surfaceVariant,
+            "❓"
+        )
+    }
+
+    Surface(
+        shape = RoundedCornerShape(28.dp),
+        color = containerColor,
         modifier = Modifier.fillMaxWidth()
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
+        Column(
+            modifier = Modifier.padding(24.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column {
+                    Text(
+                        text = "ЗАРАЗ У ЧЕРЗІ 6.1",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp,
+                        color = statusColor
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = statusTitle,
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Surface(
+                    shape = CircleShape,
+                    color = MaterialTheme.colorScheme.surface.copy(alpha = 0.8f),
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(text = icon, fontSize = 28.sp)
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(16.dp))
+
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = MaterialTheme.colorScheme.surface.copy(alpha = 0.7f),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    if (currentSlot != null) {
+                        val endMin = if (currentSlot.startMinute == 30) 0 else 30
+                        val endH = if (currentSlot.startMinute == 30) currentSlot.startHour + 1 else currentSlot.startHour
+                        Text(
+                            text = String.format("Поточний слот: %02d:%02d – %02d:%02d", currentSlot.startHour, currentSlot.startMinute, endH, endMin),
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+
+                    if (nextDifferentSlot != null) {
+                        val diffMins = (nextDifferentSlot.startHour * 60 + nextDifferentSlot.startMinute) - nowMinutes
+                        val hours = diffMins / 60
+                        val mins = diffMins % 60
+                        val timeWaitStr = if (hours > 0) "${hours}г ${mins}хв" else "${mins}хв"
+
+                        val actionText = when (nextDifferentSlot.status) {
+                            SlotStatus.OFF -> "Вимкнення через"
+                            SlotStatus.ON -> "Увімкнення через"
+                            else -> "Зміна через"
+                        }
+                        Text(
+                            text = "$actionText $timeWaitStr",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = statusColor
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun PixelEmergencyBanner(events: List<EmergencyEvent>) {
+    Surface(
+        shape = RoundedCornerShape(24.dp),
+        color = MaterialTheme.colorScheme.errorContainer,
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
             for (event in events) {
-                val typeLabel = when (event.typeId) {
+                val label = when (event.typeId) {
                     1 -> "🚨 ГАВ — Графік аварійних відключень"
                     2 -> "🚨 СГАВ — Спеціальний аварійний графік"
                     else -> "⚠️ ${event.typeName}"
                 }
                 Text(
-                    text = typeLabel,
-                    fontWeight = FontWeight.Bold,
+                    text = label,
+                    fontWeight = FontWeight.ExtraBold,
                     fontSize = 16.sp,
-                    color = PowerOff
+                    color = MaterialTheme.colorScheme.onErrorContainer
                 )
-                val time = String.format("%d:%02d", event.beginHour, event.beginMinute)
+                Spacer(Modifier.height(4.dp))
+                val time = String.format("%02d:%02d", event.beginHour, event.beginMinute)
                 Text(
-                    text = "З $time • ${event.reasonName}",
-                    fontSize = 14.sp,
-                    color = DarkText
+                    text = "Застосовано з $time • ${event.reasonName}",
+                    fontSize = 13.sp,
+                    color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.9f)
                 )
                 if (event.note.isNotBlank()) {
+                    Spacer(Modifier.height(2.dp))
                     Text(
                         text = event.note,
-                        fontSize = 13.sp,
-                        color = SubText
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onErrorContainer
                     )
                 }
-                Spacer(Modifier.height(4.dp))
             }
         }
     }
 }
 
 @Composable
-fun CurrentStatusCard(schedule: DailySchedule) {
+fun PixelTimelineBlock(block: ScheduleBlock, dark: Boolean) {
     val cal = Calendar.getInstance()
-    val currentHour = cal.get(Calendar.HOUR_OF_DAY)
-    val currentMinute = cal.get(Calendar.MINUTE)
+    val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
+    val blockStart = block.startHour * 60 + block.startMinute
+    val blockEnd = block.endHour * 60 + block.endMinute
 
-    // Find current slot
-    val currentSlot = schedule.slots.find { slot ->
-        val slotEnd = if (slot.startMinute == 0) {
-            slot.startHour * 60 + 30
-        } else {
-            slot.startHour * 60 + 60
-        }
-        val slotStart = slot.startHour * 60 + slot.startMinute
-        val now = currentHour * 60 + currentMinute
-        now in slotStart until slotEnd
+    val isCurrent = nowMinutes in blockStart until blockEnd
+    val isPast = nowMinutes >= blockEnd
+
+    val (color, label, bgContainer) = when (block.status) {
+        SlotStatus.ON -> Triple(
+            if (dark) DarkPowerOn else PowerOn,
+            "Світло є",
+            if (dark) DarkPowerOnContainer.copy(alpha = 0.2f) else PowerOnContainer.copy(alpha = 0.35f)
+        )
+        SlotStatus.OFF -> Triple(
+            if (dark) DarkPowerOff else PowerOff,
+            "Світла немає",
+            if (dark) DarkPowerOffContainer.copy(alpha = 0.2f) else PowerOffContainer.copy(alpha = 0.35f)
+        )
+        SlotStatus.SWITCHING -> Triple(
+            if (dark) DarkPowerSwitching else PowerSwitching,
+            "Перемикання",
+            if (dark) DarkPowerSwitchingContainer.copy(alpha = 0.2f) else PowerSwitchingContainer.copy(alpha = 0.35f)
+        )
+        SlotStatus.UNKNOWN -> Triple(
+            MaterialTheme.colorScheme.onSurfaceVariant,
+            "Невідомо",
+            MaterialTheme.colorScheme.surfaceVariant
+        )
     }
 
-    val (statusEmoji, statusText, statusColor) = when (currentSlot?.status) {
-        SlotStatus.ON -> Triple("✅", "Світло є", PowerOn)
-        SlotStatus.OFF -> Triple("⛔", "Світла немає", PowerOff)
-        SlotStatus.SWITCHING -> Triple("⚠️", "Перемикання", PowerSwitching)
-        else -> Triple("❓", "Невідомо", SubText)
-    }
+    val timeRange = String.format(
+        "%02d:%02d – %02d:%02d",
+        block.startHour, block.startMinute,
+        block.endHour, block.endMinute
+    )
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = statusColor.copy(alpha = 0.12f)),
-        shape = RoundedCornerShape(16.dp),
-        modifier = Modifier.fillMaxWidth()
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = if (isCurrent) bgContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f),
+        modifier = Modifier
+            .fillMaxWidth()
+            .then(
+                if (isCurrent) Modifier.border(2.dp, color, RoundedCornerShape(20.dp))
+                else Modifier
+            )
+            .then(if (isPast) Modifier.alpha(0.55f) else Modifier.alpha(1f))
     ) {
         Row(
             modifier = Modifier
-                .padding(20.dp)
+                .padding(horizontal = 18.dp, vertical = 14.dp)
                 .fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(statusEmoji, fontSize = 40.sp)
-            Spacer(Modifier.width(16.dp))
-            Column {
-                Text(
-                    "Черга 6.1 зараз",
-                    fontSize = 13.sp,
-                    color = SubText
-                )
-                Text(
-                    statusText,
-                    fontSize = 24.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = statusColor
-                )
-                if (currentSlot != null) {
-                    val timeRange = String.format(
-                        "%d:%02d – %d:%02d",
-                        currentSlot.startHour, currentSlot.startMinute,
-                        if (currentSlot.startMinute == 30) currentSlot.startHour + 1 else currentSlot.startHour,
-                        if (currentSlot.startMinute == 30) 0 else 30
-                    )
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(color)
+            )
+
+            Spacer(Modifier.width(14.dp))
+
+            Text(
+                text = timeRange,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 16.sp,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.width(120.dp)
+            )
+
+            Text(
+                text = label,
+                fontSize = 14.sp,
+                color = color,
+                fontWeight = if (isCurrent) FontWeight.ExtraBold else FontWeight.SemiBold
+            )
+
+            if (isCurrent) {
+                Spacer(Modifier.weight(1f))
+                Surface(
+                    shape = CircleShape,
+                    color = color
+                ) {
                     Text(
-                        "Інтервал: $timeRange",
-                        fontSize = 13.sp,
-                        color = SubText
+                        text = "Зараз",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 3.dp)
                     )
                 }
             }
@@ -253,29 +476,8 @@ fun CurrentStatusCard(schedule: DailySchedule) {
     }
 }
 
-@Composable
-fun ScheduleSummaryCard(schedule: DailySchedule) {
-    if (schedule.date.isBlank()) return
+data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = LightBlue),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Text(
-                schedule.date,
-                fontWeight = FontWeight.Bold,
-                fontSize = 15.sp,
-                color = PrimaryBlue
-            )
-        }
-    }
-}
-
-/**
- * Group consecutive slots with the same status into blocks.
- */
 data class ScheduleBlock(
     val startHour: Int,
     val startMinute: Int,
@@ -295,7 +497,6 @@ fun groupSlotsIntoBlocks(slots: List<TimeSlot>): List<ScheduleBlock> {
     for (i in 1 until slots.size) {
         val slot = slots[i]
         if (slot.status != currentStatus) {
-            // End the current block
             blocks.add(
                 ScheduleBlock(
                     startHour = blockStartHour,
@@ -311,7 +512,6 @@ fun groupSlotsIntoBlocks(slots: List<TimeSlot>): List<ScheduleBlock> {
         }
     }
 
-    // Add last block
     val lastSlot = slots.last()
     val endMinute = if (lastSlot.startMinute == 30) 0 else 30
     val endHour = if (lastSlot.startMinute == 30) lastSlot.startHour + 1 else lastSlot.startHour
@@ -326,72 +526,4 @@ fun groupSlotsIntoBlocks(slots: List<TimeSlot>): List<ScheduleBlock> {
     )
 
     return blocks
-}
-
-@Composable
-fun ScheduleBlockRow(block: ScheduleBlock) {
-    val (color, label) = when (block.status) {
-        SlotStatus.ON -> Pair(PowerOn, "Світло є")
-        SlotStatus.OFF -> Pair(PowerOff, "Світла немає")
-        SlotStatus.SWITCHING -> Pair(PowerSwitching, "Перемикання")
-        SlotStatus.UNKNOWN -> Pair(SubText, "Невідомо")
-    }
-
-    val timeRange = String.format(
-        "%d:%02d – %d:%02d",
-        block.startHour, block.startMinute,
-        block.endHour, block.endMinute
-    )
-
-    // Check if this block contains the current time
-    val cal = Calendar.getInstance()
-    val nowMinutes = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
-    val blockStart = block.startHour * 60 + block.startMinute
-    val blockEnd = block.endHour * 60 + block.endMinute
-    val isCurrent = nowMinutes in blockStart until blockEnd
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(
-                if (isCurrent) Modifier
-                    .background(CurrentSlotBg, RoundedCornerShape(8.dp))
-                    .border(2.dp, PrimaryBlue, RoundedCornerShape(8.dp))
-                else Modifier
-                    .background(CardBg, RoundedCornerShape(8.dp))
-            )
-            .padding(12.dp),
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        // Status dot
-        Box(
-            modifier = Modifier
-                .size(14.dp)
-                .clip(CircleShape)
-                .background(color)
-        )
-
-        Spacer(Modifier.width(12.dp))
-
-        // Time range
-        Text(
-            text = timeRange,
-            fontWeight = FontWeight.Medium,
-            fontSize = 16.sp,
-            modifier = Modifier.width(100.dp)
-        )
-
-        // Status label
-        Text(
-            text = label,
-            fontSize = 14.sp,
-            color = color,
-            fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.Normal
-        )
-
-        if (isCurrent) {
-            Spacer(Modifier.weight(1f))
-            Text("← зараз", fontSize = 12.sp, color = PrimaryBlue, fontWeight = FontWeight.Bold)
-        }
-    }
 }
