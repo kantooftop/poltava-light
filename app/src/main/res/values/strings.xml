@@ -1,11 +1,11 @@
 <resources>
     <string name="app_name">Полтава Світло</string>
     <string name="queue_label">Черга 6.1</string>
-    <string name="status_on">Світло є ✅</string>
-    <string name="status_off">Світла немає ⛔</string>
-    <string name="status_switching">Перемикання ⚠️</string>
+    <string name="status_on">Світло є</string>
+    <string name="status_off">Світла немає</string>
+    <string name="status_switching">Перемикання</string>
     <string name="status_unknown">Невідомо</string>
-    <string name="last_update">Останнє оновлення: %s</string>
+    <string name="last_update">Оновлено: %s</string>
     <string name="emergency_gav">🚨 ГАВ — Аварійне відключення!</string>
     <string name="emergency_sgav">🚨 СГАВ — Спеціальне аварійне відключення!</string>
     <string name="no_emergency">Аварійних відключень немає</string>
@@ -13,6 +13,16 @@
     <string name="notification_channel_schedule">Зміна графіку</string>
     <string name="notification_channel_emergency">Аварійні відключення</string>
     <string name="notification_channel_reminder">Нагадування</string>
+    <string name="notification_channel_ongoing">Поточний статус</string>
     <string name="refresh">Оновити</string>
+    <string name="notifications">Сповіщення</string>
+    <string name="queues">Черги</string>
+    <string name="share">Поділитися</string>
+    <string name="power_ac">⚡ Мережа є</string>
+    <string name="power_battery">🔋 Від батареї</string>
     <string name="error_network">Помилка з\'єднання. Перевірте інтернет.</string>
+    <string name="today">Сьогодні</string>
+    <string name="tomorrow">Завтра</string>
+    <string name="widget_name">Полтава Світло (Віджет)</string>
+    <string name="widget_description">Відображає поточний статус світла, таймер до зміни та графік.</string>
 </resources>

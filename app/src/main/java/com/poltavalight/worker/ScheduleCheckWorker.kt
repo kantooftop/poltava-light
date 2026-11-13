@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.work.*
 import com.poltavalight.data.ScheduleRepository
 import com.poltavalight.data.SlotStatus
+import com.poltavalight.data.TimeSlot
 import java.util.Calendar
 import java.util.concurrent.TimeUnit
 
@@ -32,7 +33,7 @@ class ScheduleCheckWorker(
                 .build()
 
             val request = PeriodicWorkRequestBuilder<ScheduleCheckWorker>(
-                15, TimeUnit.MINUTES  // Minimum interval for WorkManager
+                15, TimeUnit.MINUTES
             )
                 .setConstraints(constraints)
                 .setBackoffCriteria(
@@ -56,7 +57,10 @@ class ScheduleCheckWorker(
 
         val repository = ScheduleRepository(applicationContext)
         val notificationHelper = NotificationHelper(applicationContext)
-        val result = repository.performCheck()
+        val selectedQueue = repository.getSelectedQueueNumber()
+        val queueLabel = repository.getSelectedQueueLabel()
+
+        val result = repository.performCheck(selectedQueue)
 
         if (result.error != null) {
             Log.w(TAG, "Check failed: ${result.error}")
@@ -74,11 +78,13 @@ class ScheduleCheckWorker(
         if (schedule != null && schedule.slots.isNotEmpty()) {
             if (repository.hasScheduleChanged(schedule.rawHash)) {
                 Log.i(TAG, "Schedule changed!")
-                notificationHelper.showScheduleChangedNotification()
+                notificationHelper.showScheduleChangedNotification(queueLabel)
             }
 
-            // Check if outage is coming in the next 30 minutes
-            checkUpcomingOutage(schedule.slots, notificationHelper)
+            // Check if outage or switching is coming in the next 15-30 minutes
+            if (repository.isNotificationsEnabled()) {
+                checkUpcomingOutageOrSwitching(schedule.slots, notificationHelper, queueLabel)
+            }
 
             // Save current state
             repository.saveCurrentState(schedule.rawHash, result.emergencies)
@@ -89,44 +95,46 @@ class ScheduleCheckWorker(
     }
 
     /**
-     * Check if an outage starts in the next ~30 minutes and send a reminder.
+     * Check if an outage or switching starts in the next ~15-30 minutes and send a reminder.
      */
-    private fun checkUpcomingOutage(
-        slots: List<com.poltavalight.data.TimeSlot>,
-        notificationHelper: NotificationHelper
+    private fun checkUpcomingOutageOrSwitching(
+        slots: List<TimeSlot>,
+        notificationHelper: NotificationHelper,
+        queueLabel: String
     ) {
         val cal = Calendar.getInstance()
         val currentHour = cal.get(Calendar.HOUR_OF_DAY)
         val currentMinute = cal.get(Calendar.MINUTE)
         val currentTotalMinutes = currentHour * 60 + currentMinute
 
-        // Find the next OFF slot within the next 30-45 minutes
+        // Scan upcoming slots within 10 to 30 minutes
         for (slot in slots) {
-            if (slot.status != SlotStatus.OFF) continue
+            if (slot.status != SlotStatus.OFF && slot.status != SlotStatus.SWITCHING) continue
 
             val slotTotalMinutes = slot.startHour * 60 + slot.startMinute
             val diff = slotTotalMinutes - currentTotalMinutes
 
-            if (diff in 15..45) {
-                // Check if previous slot is ON (transition from power to no power)
+            // Trigger when exactly 10 to 25 minutes prior
+            if (diff in 10..25) {
+                // Find previous slot to verify this is an actual transition
                 val prevSlotMinutes = slotTotalMinutes - 30
                 val prevSlot = slots.find {
                     it.startHour * 60 + it.startMinute == prevSlotMinutes
                 }
 
-                if (prevSlot?.status == SlotStatus.ON || prevSlot?.status == SlotStatus.SWITCHING) {
-                    val timeStr = String.format("%d:%02d", slot.startHour, slot.startMinute)
+                // If previous slot was ON, then this is an upcoming outage or switching!
+                if (prevSlot == null || prevSlot.status == SlotStatus.ON) {
+                    val timeStr = String.format("%02d:%02d", slot.startHour, slot.startMinute)
 
-                    // Check if we already reminded about this slot today
                     val prefs = applicationContext.getSharedPreferences(
                         "poltava_light_prefs", Context.MODE_PRIVATE
                     )
-                    val lastReminder = prefs.getString("last_reminder", "") ?: ""
-                    val reminderKey = "${cal.get(Calendar.DAY_OF_YEAR)}_${slot.startHour}_${slot.startMinute}"
+                    val lastReminder = prefs.getString("last_reminder_slot", "") ?: ""
+                    val reminderKey = "${cal.get(Calendar.DAY_OF_YEAR)}_${slot.startHour}_${slot.startMinute}_${slot.status.name}"
 
                     if (lastReminder != reminderKey) {
-                        notificationHelper.showOutageReminderNotification(timeStr)
-                        prefs.edit().putString("last_reminder", reminderKey).apply()
+                        notificationHelper.showOutageReminderNotification(timeStr, slot.status, queueLabel)
+                        prefs.edit().putString("last_reminder_slot", reminderKey).apply()
                     }
                 }
             }
