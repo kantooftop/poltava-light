@@ -27,11 +27,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.poltavalight.data.CheckResult
@@ -135,8 +132,10 @@ fun MainScreen(
     }
 
     // Subtitle sequence of future events
-    val futureSubtitle = remember(blocks, currentTotalMinutes, selectedDayIndex) {
-        if (selectedDayIndex == 0) {
+    val futureSubtitle = remember(blocks, currentTotalMinutes, selectedDayIndex, slots.isEmpty()) {
+        if (slots.isEmpty()) {
+            "Дані графіка відсутні"
+        } else if (selectedDayIndex == 0) {
             val future = blocks.filter { (it.endHour * 60 + it.endMinute) > currentTotalMinutes }
             if (future.isEmpty()) {
                 "До кінця доби змін не очікується"
@@ -179,13 +178,24 @@ fun MainScreen(
                 Spacer(modifier = Modifier.height(8.dp))
                 // Top Header Row
                 HeaderBar(
-                    queueLabel = selectedQueueLabel,
                     queueNumber = selectedQueueNumber,
                     selectedDayIndex = selectedDayIndex,
                     hasTomorrowSchedule = hasTomorrowSchedule,
                     onQueueClick = { showQueueDialog = true },
                     onDayChanged = { selectedDayIndex = it }
                 )
+            }
+
+            // Network / VPN Error Banner
+            if (checkResult?.error != null) {
+                item {
+                    VpnErrorBanner(
+                        errorMessage = checkResult.error,
+                        hasCachedData = activeSchedule != null,
+                        lastCheckTime = lastCheckTime,
+                        onRetry = onRefresh
+                    )
+                }
             }
 
             // Emergency GAV/SGAV Banner
@@ -195,11 +205,10 @@ fun MainScreen(
                 }
             }
 
-            // Hero Block: Revolut Style Balance / Timer
+            // Hero Block: Revolut Style Status & Countdown
             item {
                 HeroTimerCard(
                     status = currentStatus,
-                    isCharging = isCharging,
                     selectedDayIndex = selectedDayIndex,
                     nextSlot = nextChangeSlot,
                     currentHour = currentHour,
@@ -219,8 +228,8 @@ fun MainScreen(
                     onToggleNotifications = onToggleNotifications,
                     onOpenQueues = { showQueueDialog = true },
                     onShare = {
-                        val text = activeSchedule?.toShareText(selectedQueueLabel)
-                            ?: "Графік відключень $selectedQueueLabel\nДані відсутні"
+                        val text = activeSchedule?.toShareText("Черга $selectedQueueNumber")
+                            ?: "Графік відключень Черга $selectedQueueNumber\nДані відсутні"
                         onShare(text)
                     }
                 )
@@ -232,18 +241,21 @@ fun MainScreen(
                     schedule = activeSchedule,
                     currentTotalMinutes = if (selectedDayIndex == 0) currentTotalMinutes else -1,
                     stats = stats,
-                    longestWindow = longestWindow
+                    longestWindow = longestWindow,
+                    onRefresh = onRefresh
                 )
             }
 
             // Intervals List Card (Revolut History Style)
-            item {
-                IntervalsCard(
-                    blocks = blocks,
-                    currentTotalMinutes = if (selectedDayIndex == 0) currentTotalMinutes else -1,
-                    showPastSlots = showPastSlots,
-                    onToggleShowPast = { showPastSlots = !showPastSlots }
-                )
+            if (blocks.isNotEmpty()) {
+                item {
+                    IntervalsCard(
+                        blocks = blocks,
+                        currentTotalMinutes = if (selectedDayIndex == 0) currentTotalMinutes else -1,
+                        showPastSlots = showPastSlots,
+                        onToggleShowPast = { showPastSlots = !showPastSlots }
+                    )
+                }
             }
 
             item {
@@ -252,14 +264,13 @@ fun MainScreen(
         }
     }
 
-    // Queue selection Dialog
+    // Queue selection Dialog (Clean 12-queue selector)
     if (showQueueDialog) {
         QueueSelectionDialog(
             currentQueueNumber = selectedQueueNumber,
-            savedQueues = savedQueues,
             onDismiss = { showQueueDialog = false },
             onSelect = { q ->
-                onQueueSelected(q)
+                onQueueSelected(SavedQueue(id = q, label = "Черга $q", queueNumber = q))
                 showQueueDialog = false
             }
         )
@@ -267,11 +278,10 @@ fun MainScreen(
 }
 
 // ====================================================================
-// HEADER BAR: Queue Capsule + Day Switcher
+// HEADER BAR: Clean Queue Capsule + Day Switcher
 // ====================================================================
 @Composable
 private fun HeaderBar(
-    queueLabel: String,
     queueNumber: String,
     selectedDayIndex: Int,
     hasTomorrowSchedule: Boolean,
@@ -285,7 +295,7 @@ private fun HeaderBar(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Queue Selector Capsule (e.g. "Черга 6.1 ▾")
+        // Queue Selector Capsule: "Черга 4.2 ▾"
         Surface(
             shape = RoundedCornerShape(20.dp),
             color = RevolutSecondary,
@@ -299,11 +309,12 @@ private fun HeaderBar(
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
             ) {
                 Text(
-                    text = "$queueLabel ($queueNumber)",
+                    text = "Черга $queueNumber",
                     color = RevolutTextPrimary,
                     fontSize = 14.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Bold
                 )
+                Spacer(modifier = Modifier.width(4.dp))
                 Icon(
                     imageVector = Icons.Default.ArrowDropDown,
                     contentDescription = "Оберіть чергу",
@@ -350,15 +361,17 @@ private fun DaySegment(
     val bgColor = if (isSelected) RevolutCard else Color.Transparent
     val textColor = if (isSelected) RevolutTextPrimary else RevolutTextSecondary
 
-    Box(
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = bgColor,
         modifier = Modifier
             .clip(RoundedCornerShape(16.dp))
-            .background(bgColor)
             .clickable { onClick() }
-            .padding(horizontal = 12.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
     ) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = text,
                 color = textColor,
@@ -379,12 +392,79 @@ private fun DaySegment(
 }
 
 // ====================================================================
+// VPN / CONNECTION ERROR BANNER
+// ====================================================================
+@Composable
+private fun VpnErrorBanner(
+    errorMessage: String,
+    hasCachedData: Boolean,
+    lastCheckTime: String,
+    onRetry: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, Color(0xFFF59E0B).copy(alpha = 0.4f), RoundedCornerShape(20.dp)),
+        shape = RoundedCornerShape(20.dp),
+        color = Color(0xFF261C0E)
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(text = "⚠️", fontSize = 18.sp)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Проблема зі з'єднанням (VPN)",
+                        color = Color(0xFFFBBF24),
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = Color(0xFFF59E0B).copy(alpha = 0.2f),
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .clickable { onRetry() }
+                ) {
+                    Text(
+                        text = "Повторити",
+                        color = Color(0xFFFBBF24),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                    )
+                }
+            }
+
+            Text(
+                text = if (hasCachedData) {
+                    "Сайт обленерго (poe.pl.ua) блокує іноземні IP через VPN. Вимкніть VPN або додайте PoltavaLight у винятки. Зараз показано збережений розклад ($lastCheckTime)."
+                } else {
+                    "Не вдалося завантажити графік з poe.pl.ua. Якщо увімкнено VPN — тимчасово вимкніть його, оскільки сайт обленерго блокує закордонні підключення."
+                },
+                color = RevolutTextSecondary,
+                fontSize = 12.sp,
+                lineHeight = 16.sp
+            )
+        }
+    }
+}
+
+// ====================================================================
 // HERO CARD: Large Revolut-Style Timer & Status
 // ====================================================================
 @Composable
 private fun HeroTimerCard(
     status: SlotStatus,
-    isCharging: Boolean,
     selectedDayIndex: Int,
     nextSlot: TimeSlot?,
     currentHour: Int,
@@ -446,90 +526,61 @@ private fun HeroTimerCard(
                 .padding(20.dp),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Badges row: Status Badge + Live Power Source Badge
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            // Status Badge with pulsing dot
+            Surface(
+                shape = RoundedCornerShape(12.dp),
+                color = statusColor.copy(alpha = 0.15f),
+                modifier = Modifier.border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
             ) {
-                // Status Badge with pulsing dot
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = statusColor.copy(alpha = 0.15f),
-                    modifier = Modifier.border(1.dp, statusColor.copy(alpha = 0.3f), RoundedCornerShape(12.dp))
+                Row(
+                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .size(8.dp)
-                                .clip(CircleShape)
-                                .background(statusColor)
-                                .alpha(alphaDot)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = statusLabel,
-                            color = statusColor,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-
-                // Live Power Source Badge (Charging / Battery)
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = RevolutSecondary,
-                    modifier = Modifier.border(1.dp, RevolutCardBorder, RoundedCornerShape(12.dp))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = if (isCharging) "⚡ Мережа є" else "🔋 Від батареї",
-                            color = if (isCharging) PowerOn else RevolutTextSecondary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
+                    Box(
+                        modifier = Modifier
+                            .size(8.dp)
+                            .clip(CircleShape)
+                            .background(statusColor)
+                            .alpha(alphaDot)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = statusLabel,
+                        color = statusColor,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(14.dp))
+            Spacer(modifier = Modifier.height(18.dp))
 
-            // Large Hero Countdown Timer (Revolut balance style)
+            // Main Big Countdown / State
             Text(
                 text = timerString,
                 color = RevolutTextPrimary,
-                fontSize = 48.sp,
+                fontSize = 42.sp,
                 fontWeight = FontWeight.Bold,
-                style = TextStyle(
-                    fontFamily = FontFamily.Monospace,
-                    fontFeatureSettings = "tnum"
-                ),
+                letterSpacing = 1.sp,
                 textAlign = TextAlign.Center
             )
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(10.dp))
 
-            // Subtitle: Next event details
+            // Subtitle sequence of future events
             Text(
                 text = subtitle,
                 color = RevolutTextSecondary,
                 fontSize = 13.sp,
-                textAlign = TextAlign.Center,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = FontWeight.Medium,
+                textAlign = TextAlign.Center
             )
         }
     }
 }
 
 // ====================================================================
-// ACTION BUTTONS ROW: 4 Round Buttons
+// ACTION BUTTONS ROW: Refresh, Notifications, Queues, Share
 // ====================================================================
 @Composable
 private fun ActionButtonsRow(
@@ -541,8 +592,7 @@ private fun ActionButtonsRow(
     onOpenQueues: () -> Unit,
     onShare: () -> Unit
 ) {
-    // Rotation animation for refresh button
-    val infiniteTransition = rememberInfiniteTransition(label = "refreshAnim")
+    val infiniteTransition = rememberInfiniteTransition(label = "spin")
     val rotation by infiniteTransition.animateFloat(
         initialValue = 0f,
         targetValue = 360f,
@@ -599,7 +649,10 @@ private fun ActionButtonItem(
 ) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
-        modifier = Modifier.clickable { onClick() }
+        modifier = Modifier
+            .clip(RoundedCornerShape(16.dp))
+            .clickable { onClick() }
+            .padding(8.dp)
     ) {
         Surface(
             shape = CircleShape,
@@ -608,10 +661,7 @@ private fun ActionButtonItem(
                 .size(48.dp)
                 .border(1.dp, RevolutCardBorder, CircleShape)
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
-            ) {
+            Box(contentAlignment = Alignment.Center) {
                 Icon(
                     imageVector = icon,
                     contentDescription = label,
@@ -626,7 +676,7 @@ private fun ActionButtonItem(
         Text(
             text = label,
             color = RevolutTextSecondary,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = FontWeight.Medium
         )
     }
@@ -640,7 +690,8 @@ private fun TimelineAndStatsCard(
     schedule: DailySchedule?,
     currentTotalMinutes: Int,
     stats: ScheduleStats?,
-    longestWindow: LightWindow?
+    longestWindow: LightWindow?,
+    onRefresh: () -> Unit
 ) {
     Surface(
         modifier = Modifier
@@ -663,16 +714,33 @@ private fun TimelineAndStatsCard(
 
             Spacer(modifier = Modifier.height(14.dp))
 
-            // Continuous 24h Bar
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(28.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(RevolutSecondary)
-            ) {
-                val slots = schedule?.slots ?: emptyList()
-                if (slots.isNotEmpty()) {
+            val slots = schedule?.slots ?: emptyList()
+
+            if (slots.isEmpty()) {
+                // Empty state message inside timeline
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(60.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(RevolutSecondary),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "Натисніть «Оновити» для завантаження графіка",
+                        color = RevolutTextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
+            } else {
+                // Continuous 24h Bar
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(28.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(RevolutSecondary)
+                ) {
                     Row(modifier = Modifier.fillMaxSize()) {
                         for (slot in slots) {
                             val color = when (slot.status) {
@@ -689,105 +757,127 @@ private fun TimelineAndStatsCard(
                             )
                         }
                     }
-                }
 
-                // Vertical White Marker for Current Time
-                if (currentTotalMinutes in 0..1439) {
-                    val markerFraction = currentTotalMinutes.toFloat() / 1440f
-                    Box(
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .fillMaxWidth(fraction = markerFraction)
-                    ) {
+                    // Vertical White Marker for Current Time
+                    if (currentTotalMinutes in 0..1439) {
+                        val markerFraction = currentTotalMinutes.toFloat() / 1440f
                         Box(
                             modifier = Modifier
-                                .align(Alignment.CenterEnd)
-                                .width(3.dp)
                                 .fillMaxHeight()
-                                .background(Color.White)
-                        )
+                                .fillMaxWidth(fraction = markerFraction)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .align(Alignment.CenterEnd)
+                                    .width(3.dp)
+                                    .fillMaxHeight()
+                                    .background(Color.White)
+                            )
+                        }
                     }
                 }
-            }
 
-            // Hour Markers (00, 06, 12, 18, 24)
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                listOf("00", "06", "12", "18", "24").forEach { hourStr ->
-                    Text(
-                        text = hourStr,
-                        color = RevolutTextSecondary,
-                        fontSize = 11.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(16.dp))
-            HorizontalDivider(color = RevolutCardBorder, thickness = 1.dp)
-            Spacer(modifier = Modifier.height(12.dp))
-
-            // 2 Columns of Day Totals
-            if (stats != null) {
+                // Hour Markers (00, 06, 12, 18, 24)
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "⚡", fontSize = 16.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = String.format(Locale.US, "%.1f год зі світлом", stats.hoursOn),
-                            color = PowerOn,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(text = "🌑", fontSize = 16.sp)
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = String.format(Locale.US, "%.1f год без світла", stats.hoursOff),
-                            color = PowerOff,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.SemiBold
-                        )
-                    }
-                }
-            }
-
-            // Smart Planner Window Hint
-            if (longestWindow != null) {
-                Spacer(modifier = Modifier.height(12.dp))
-                Surface(
-                    shape = RoundedCornerShape(12.dp),
-                    color = RevolutSecondary,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, RevolutCardBorder, RoundedCornerShape(12.dp))
+                        .padding(top = 4.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(text = "💡", fontSize = 15.sp)
-                        Spacer(modifier = Modifier.width(8.dp))
+                    listOf("00", "06", "12", "18", "24").forEach { hourStr ->
                         Text(
-                            text = String.format(
-                                Locale.US,
-                                "Найдовше вікно зі світлом: %02d:%02d – %02d:%02d (%s)",
-                                longestWindow.startHour, longestWindow.startMinute,
-                                longestWindow.endHour, longestWindow.endMinute,
-                                formatDuration(longestWindow.durationMinutes)
-                            ),
-                            color = RevolutTextPrimary,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
+                            text = hourStr,
+                            color = RevolutTextSecondary,
+                            fontSize = 11.sp
                         )
+                    }
+                }
+
+                if (stats != null) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    HorizontalDivider(color = RevolutCardBorder, thickness = 1.dp)
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    // 2 Columns of Day Totals
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "⚡", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = String.format(Locale.US, "%.1f год зі світлом", stats.hoursOn),
+                                color = PowerOn,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "⛔", fontSize = 16.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = String.format(Locale.US, "%.1f год без світла", stats.hoursOff),
+                                color = PowerOff,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
+
+                    if (stats.hoursSwitching > 0) {
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(text = "⚠️", fontSize = 14.sp)
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text(
+                                text = String.format(Locale.US, "%.1f год можливих перемикань", stats.hoursSwitching),
+                                color = PowerSwitching,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+
+                    // Smart Planner: Longest light window badge
+                    if (longestWindow != null) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = PowerOn.copy(alpha = 0.12f),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, PowerOn.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(text = "💡", fontSize = 16.sp)
+                                Spacer(modifier = Modifier.width(8.dp))
+                                Column {
+                                    Text(
+                                        text = "Найдовше вікно зі світлом",
+                                        color = PowerOn,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Text(
+                                        text = String.format(
+                                            Locale.US,
+                                            "%02d:%02d – %02d:%02d (%s)",
+                                            longestWindow.startHour, longestWindow.startMinute,
+                                            longestWindow.endHour, longestWindow.endMinute,
+                                            formatDuration(longestWindow.durationMinutes)
+                                        ),
+                                        color = RevolutTextPrimary,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.SemiBold
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -796,7 +886,7 @@ private fun TimelineAndStatsCard(
 }
 
 // ====================================================================
-// GROUPED INTERVALS CARD: Revolut Transaction History Style
+// INTERVALS LIST CARD
 // ====================================================================
 @Composable
 private fun IntervalsCard(
@@ -1003,14 +1093,13 @@ private fun EmergencyBanner(events: List<EmergencyEvent>) {
 }
 
 // ====================================================================
-// QUEUE SELECTION DIALOG
+// QUEUE SELECTION DIALOG: Clean 12-queue selector
 // ====================================================================
 @Composable
 private fun QueueSelectionDialog(
     currentQueueNumber: String,
-    savedQueues: List<SavedQueue>,
     onDismiss: () -> Unit,
-    onSelect: (SavedQueue) -> Unit
+    onSelect: (String) -> Unit
 ) {
     val scrollState = rememberScrollState()
 
@@ -1030,14 +1119,13 @@ private fun QueueSelectionDialog(
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(scrollState),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
+                verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                // Section: All 12 queues of Poltava region
                 Text(
-                    text = "Всі черги Полтавщини (ГПВ)",
+                    text = "Графіки погодинних відключень (ГПВ)",
                     color = RevolutTextSecondary,
                     fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold
+                    fontWeight = FontWeight.Normal
                 )
 
                 // 6 queues x 2 subqueues grid
@@ -1059,67 +1147,14 @@ private fun QueueSelectionDialog(
                             queueNumber = q1,
                             isSelected = currentQueueNumber == q1,
                             modifier = Modifier.weight(1f),
-                            onClick = {
-                                onSelect(SavedQueue(id = q1, label = "Черга $q1", queueNumber = q1))
-                            }
+                            onClick = { onSelect(q1) }
                         )
                         QueueButton(
                             queueNumber = q2,
                             isSelected = currentQueueNumber == q2,
                             modifier = Modifier.weight(1f),
-                            onClick = {
-                                onSelect(SavedQueue(id = q2, label = "Черга $q2", queueNumber = q2))
-                            }
+                            onClick = { onSelect(q2) }
                         )
-                    }
-                }
-
-                // Section: Saved bookmarks (if any)
-                if (savedQueues.isNotEmpty()) {
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        text = "Швидкі закладки",
-                        color = RevolutTextSecondary,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-
-                    savedQueues.forEach { queue ->
-                        val isSelected = queue.queueNumber == currentQueueNumber
-                        Surface(
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) RevolutSecondary else Color.Transparent,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { onSelect(queue) }
-                                .border(
-                                    1.dp,
-                                    if (isSelected) PowerOn else RevolutCardBorder,
-                                    RoundedCornerShape(12.dp)
-                                )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "${queue.label} (Черга ${queue.queueNumber})",
-                                    color = RevolutTextPrimary,
-                                    fontSize = 14.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                                )
-                                if (isSelected) {
-                                    Text(
-                                        text = "✓",
-                                        color = PowerOn,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 16.sp
-                                    )
-                                }
-                            }
-                        }
                     }
                 }
             }

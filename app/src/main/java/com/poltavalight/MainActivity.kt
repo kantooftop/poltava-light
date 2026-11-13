@@ -21,7 +21,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
 import com.poltavalight.data.CheckResult
-import com.poltavalight.data.SavedQueue
 import com.poltavalight.data.ScheduleRepository
 import com.poltavalight.ui.MainScreen
 import com.poltavalight.ui.theme.PoltavaLightTheme
@@ -81,19 +80,28 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = RevolutBlack
                 ) {
-                    var checkResult by remember { mutableStateOf<CheckResult?>(null) }
-                    var isLoading by remember { mutableStateOf(true) }
-                    var lastCheckTime by remember { mutableStateOf(repository.getLastCheckTime()) }
-                    var selectedQueueNumber by remember { mutableStateOf(repository.getSelectedQueueNumber()) }
+                    val initialQueue = remember { repository.getSelectedQueueNumber() }
+                    var selectedQueueNumber by remember { mutableStateOf(initialQueue) }
                     var selectedQueueLabel by remember { mutableStateOf(repository.getSelectedQueueLabel()) }
+
+                    // Instantly load cached data so launching from widget or launcher is immediate!
+                    var checkResult by remember {
+                        mutableStateOf<CheckResult?>(repository.getCachedCheckResult(initialQueue))
+                    }
+                    var isLoading by remember {
+                        mutableStateOf(checkResult?.schedule == null)
+                    }
+                    var lastCheckTime by remember { mutableStateOf(repository.getLastCheckTime()) }
                     var isNotificationsEnabled by remember { mutableStateOf(repository.isNotificationsEnabled()) }
-                    var savedQueues by remember { mutableStateOf(repository.getSavedQueues()) }
+                    val savedQueues = remember { repository.getSavedQueues() }
                     val isCharging by isChargingState
 
                     val scope = rememberCoroutineScope()
 
                     fun refresh(queue: String = selectedQueueNumber) {
-                        isLoading = true
+                        if (checkResult?.schedule == null) {
+                            isLoading = true
+                        }
                         scope.launch(Dispatchers.IO) {
                             val result = repository.performCheck(queue)
                             if (result.schedule != null) {
@@ -129,6 +137,12 @@ class MainActivity : ComponentActivity() {
                             selectedQueueNumber = queue.queueNumber
                             selectedQueueLabel = queue.label
                             repository.setSelectedQueue(queue.queueNumber, queue.label)
+
+                            // Immediately switch to cached schedule for the selected queue
+                            val cached = repository.getCachedCheckResult(queue.queueNumber)
+                            if (cached.schedule != null) {
+                                checkResult = cached
+                            }
                             refresh(queue.queueNumber)
                         },
                         onToggleNotifications = {

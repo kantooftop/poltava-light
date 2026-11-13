@@ -11,8 +11,8 @@ import java.util.Locale
 
 /**
  * Repository that combines API fetching, parsing, and local state tracking.
- * Uses SharedPreferences to store the last known schedule hash,
- * queue settings, and cached data for widgets.
+ * Automatically caches all 12 queues of Poltava region so the app works
+ * immediately offline, on app resume, or when VPN limits access.
  */
 class ScheduleRepository(private val context: Context) {
 
@@ -25,13 +25,12 @@ class ScheduleRepository(private val context: Context) {
         private const val KEY_LAST_SCHEDULE_HASH = "last_schedule_hash"
         private const val KEY_LAST_EMERGENCY_IDS = "last_emergency_ids"
         private const val KEY_LAST_CHECK_TIME = "last_check_time"
-        private const val KEY_CACHED_SCHEDULE_JSON = "cached_schedule_slots"
         private const val KEY_CACHED_SCHEDULE_DATE = "cached_schedule_date"
         private const val KEY_CACHED_SCHEDULE_SUMMARY = "cached_schedule_summary"
+        private const val KEY_CACHED_EMERGENCIES_JSON = "cached_emergencies_json"
         private const val KEY_SELECTED_QUEUE = "selected_queue"
         private const val KEY_SELECTED_QUEUE_LABEL = "selected_queue_label"
         private const val KEY_NOTIFICATIONS_ENABLED = "notifications_enabled"
-        private const val KEY_SAVED_QUEUES = "saved_queues_list"
 
         const val ACTION_SCHEDULE_UPDATED = "com.poltavalight.action.SCHEDULE_UPDATED"
 
@@ -49,23 +48,24 @@ class ScheduleRepository(private val context: Context) {
     }
 
     /**
-     * Get the active queue number (e.g. "6.1").
+     * Get the active queue number (e.g. "4.2").
      */
     fun getSelectedQueueNumber(): String {
-        return prefs.getString(KEY_SELECTED_QUEUE, "6.1") ?: "6.1"
+        return prefs.getString(KEY_SELECTED_QUEUE, "4.2") ?: "4.2"
     }
 
     /**
-     * Get the active queue label (e.g. "Дім" or "Черга 6.1").
+     * Get the active queue label (e.g. "Черга 4.2").
      */
     fun getSelectedQueueLabel(): String {
-        return prefs.getString(KEY_SELECTED_QUEUE_LABEL, "Черга 6.1") ?: "Черга 6.1"
+        val q = getSelectedQueueNumber()
+        return "Черга $q"
     }
 
-    fun setSelectedQueue(queueNumber: String, label: String) {
+    fun setSelectedQueue(queueNumber: String, label: String = "Черга $queueNumber") {
         prefs.edit()
             .putString(KEY_SELECTED_QUEUE, queueNumber)
-            .putString(KEY_SELECTED_QUEUE_LABEL, label)
+            .putString(KEY_SELECTED_QUEUE_LABEL, "Черга $queueNumber")
             .apply()
     }
 
@@ -81,57 +81,25 @@ class ScheduleRepository(private val context: Context) {
     }
 
     /**
-     * Get list of saved queues for quick switching.
+     * Get list of all official queues.
      */
     fun getSavedQueues(): List<SavedQueue> {
-        val raw = prefs.getString(KEY_SAVED_QUEUES, null)
-        if (raw.isNullOrBlank()) {
-            return listOf(
-                SavedQueue("1", "Дім", "6.1"),
-                SavedQueue("2", "Батьки", "2.2"),
-                SavedQueue("3", "Робота", "3.1")
-            )
+        return ALL_POLTAVA_QUEUES.map { q ->
+            SavedQueue(id = q, label = "Черга $q", queueNumber = q)
         }
-        return try {
-            val arr = JSONArray(raw)
-            val list = mutableListOf<SavedQueue>()
-            for (i in 0 until arr.length()) {
-                val obj = arr.getJSONObject(i)
-                list.add(
-                    SavedQueue(
-                        id = obj.getString("id"),
-                        label = obj.getString("label"),
-                        queueNumber = obj.getString("queueNumber")
-                    )
-                )
-            }
-            list
-        } catch (e: Exception) {
-            listOf(SavedQueue("1", "Дім", "6.1"))
-        }
-    }
-
-    fun saveQueues(list: List<SavedQueue>) {
-        val arr = JSONArray()
-        for (q in list) {
-            val obj = JSONObject()
-            obj.put("id", q.id)
-            obj.put("label", q.label)
-            obj.put("queueNumber", q.queueNumber)
-            arr.put(obj)
-        }
-        prefs.edit().putString(KEY_SAVED_QUEUES, arr.toString()).apply()
     }
 
     /**
-     * Perform a full check: fetch schedule + emergencies, detect changes.
+     * Perform a full check: fetch schedule + emergencies, cache all queues, detect changes.
      */
     fun performCheck(queueNumber: String = getSelectedQueueNumber()): CheckResult {
         return try {
             val gpvHtml = api.fetchGpvHtml()
             val emergencyJson = api.fetchEmergencyJson()
 
-            val schedule = parser.parseGpvHtml(gpvHtml, queueNumber)
+            // Parse all 12 queues at once
+            val allQueues = parser.parseAllQueuesFromHtml(gpvHtml)
+            val schedule = allQueues[queueNumber] ?: parser.parseGpvHtml(gpvHtml, queueNumber)
             val tomorrowSchedule = parser.parseTomorrowGpvHtml(gpvHtml, queueNumber)
             val emergencies = parser.parseEmergencyJson(emergencyJson)
 
@@ -140,8 +108,9 @@ class ScheduleRepository(private val context: Context) {
                 .putString(KEY_LAST_CHECK_TIME, checkTime)
                 .apply()
 
-            // Cache today's schedule for offline/widget use
-            cacheSchedule(schedule)
+            // Cache all 12 queues for instant offline and cross-queue switching
+            cacheAllQueues(allQueues, schedule.date, schedule.summaryText)
+            cacheEmergencies(emergencies)
 
             // Broadcast update to widgets and components
             notifyDataUpdated()
@@ -152,12 +121,26 @@ class ScheduleRepository(private val context: Context) {
                 emergencies = emergencies
             )
         } catch (e: Exception) {
+            // On failure (e.g. VPN geo-block or offline), provide the cached data for selected queue
+            val cachedSchedule = getCachedSchedule(queueNumber)
+            val cachedEmergencies = getCachedEmergencies()
+
             CheckResult(
-                schedule = getCachedSchedule(),
-                emergencies = emptyList(),
-                error = e.message ?: "Unknown error"
+                schedule = cachedSchedule,
+                emergencies = cachedEmergencies,
+                error = e.localizedMessage ?: "Помилка зв'язку з сайтом обленерго"
             )
         }
+    }
+
+    /**
+     * Get instantly cached check result for a queue without triggering network.
+     */
+    fun getCachedCheckResult(queueNumber: String = getSelectedQueueNumber()): CheckResult {
+        return CheckResult(
+            schedule = getCachedSchedule(queueNumber),
+            emergencies = getCachedEmergencies()
+        )
     }
 
     /**
@@ -208,29 +191,45 @@ class ScheduleRepository(private val context: Context) {
         return sdf.format(Date())
     }
 
-    private fun cacheSchedule(schedule: DailySchedule) {
+    /**
+     * Cache all parsed queues into SharedPreferences for offline and quick switching.
+     */
+    private fun cacheAllQueues(
+        schedules: Map<String, DailySchedule>,
+        dateText: String,
+        summaryText: String
+    ) {
         try {
-            val arr = JSONArray()
-            for (slot in schedule.slots) {
-                val obj = JSONObject()
-                obj.put("h", slot.startHour)
-                obj.put("m", slot.startMinute)
-                obj.put("s", slot.status.name)
-                obj.put("t", slot.title)
-                arr.put(obj)
+            val editor = prefs.edit()
+            editor.putString(KEY_CACHED_SCHEDULE_DATE, dateText)
+            editor.putString(KEY_CACHED_SCHEDULE_SUMMARY, summaryText)
+
+            for ((queueNum, schedule) in schedules) {
+                val arr = JSONArray()
+                for (slot in schedule.slots) {
+                    val obj = JSONObject()
+                    obj.put("h", slot.startHour)
+                    obj.put("m", slot.startMinute)
+                    obj.put("s", slot.status.name)
+                    obj.put("t", slot.title)
+                    arr.put(obj)
+                }
+                editor.putString("cached_slots_$queueNum", arr.toString())
             }
-            prefs.edit()
-                .putString(KEY_CACHED_SCHEDULE_JSON, arr.toString())
-                .putString(KEY_CACHED_SCHEDULE_DATE, schedule.date)
-                .putString(KEY_CACHED_SCHEDULE_SUMMARY, schedule.summaryText)
-                .apply()
+            editor.apply()
         } catch (e: Exception) {
             // Ignore cache error
         }
     }
 
-    fun getCachedSchedule(): DailySchedule? {
-        val raw = prefs.getString(KEY_CACHED_SCHEDULE_JSON, null) ?: return null
+    /**
+     * Get cached schedule for a specific queue number.
+     */
+    fun getCachedSchedule(queueNumber: String = getSelectedQueueNumber()): DailySchedule? {
+        val raw = prefs.getString("cached_slots_$queueNumber", null)
+            ?: prefs.getString("cached_schedule_slots", null)
+            ?: return null
+
         return try {
             val arr = JSONArray(raw)
             val slots = mutableListOf<TimeSlot>()
@@ -254,6 +253,58 @@ class ScheduleRepository(private val context: Context) {
             )
         } catch (e: Exception) {
             null
+        }
+    }
+
+    private fun cacheEmergencies(emergencies: List<EmergencyEvent>) {
+        try {
+            val arr = JSONArray()
+            for (ev in emergencies) {
+                val obj = JSONObject()
+                obj.put("date", ev.date)
+                obj.put("bh", ev.beginHour)
+                obj.put("bm", ev.beginMinute)
+                obj.put("eh", ev.endHour)
+                obj.put("em", ev.endMinute)
+                obj.put("tn", ev.typeName)
+                obj.put("ti", ev.typeId)
+                obj.put("rn", ev.reasonName)
+                obj.put("note", ev.note)
+                obj.put("vol", ev.volume)
+                arr.put(obj)
+            }
+            prefs.edit().putString(KEY_CACHED_EMERGENCIES_JSON, arr.toString()).apply()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    fun getCachedEmergencies(): List<EmergencyEvent> {
+        val raw = prefs.getString(KEY_CACHED_EMERGENCIES_JSON, null) ?: return emptyList()
+        return try {
+            val arr = JSONArray(raw)
+            val list = mutableListOf<EmergencyEvent>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                list.add(
+                    EmergencyEvent(
+                        date = obj.optString("date", ""),
+                        beginHour = obj.optInt("bh", 0),
+                        beginMinute = obj.optInt("bm", 0),
+                        endHour = obj.optInt("eh", 0),
+                        endMinute = obj.optInt("em", 0),
+                        typeName = obj.optString("tn", ""),
+                        typeId = obj.optInt("ti", 0),
+                        reasonName = obj.optString("rn", ""),
+                        note = obj.optString("note", ""),
+                        createdDate = "",
+                        volume = obj.optInt("vol", 0)
+                    )
+                )
+            }
+            list
+        } catch (e: Exception) {
+            emptyList()
         }
     }
 

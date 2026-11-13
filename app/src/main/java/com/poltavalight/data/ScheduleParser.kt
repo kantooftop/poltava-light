@@ -12,41 +12,40 @@ import java.security.MessageDigest
 class ScheduleParser {
 
     companion object {
-        const val TARGET_QUEUE = "6.1"
+        const val TARGET_QUEUE = "4.2"
     }
 
     /**
-     * Parse the GPV HTML page to extract schedule for a target queue (defaults to 6.1).
+     * Parse all 12 queues from the GPV HTML page in a single pass.
+     * Returns a map of queueNumber (e.g. "4.2", "6.1") to DailySchedule.
      */
-    fun parseGpvHtml(html: String, targetQueue: String = TARGET_QUEUE): DailySchedule {
-        val doc = Jsoup.parse(html)
+    fun parseAllQueuesFromHtml(html: String): Map<String, DailySchedule> {
+        val resultMap = mutableMapOf<String, DailySchedule>()
+        if (html.isBlank()) return resultMap
 
-        // Extract date and summary from the top text block
-        val summaryText = buildString {
-            doc.select("div.gpvinfodetail b, div.gpvinfodetail").firstOrNull()?.let {
-                append(doc.select("div.gpvinfodetail").first()?.ownText() ?: "")
-            }
-        }
+        try {
+            val doc = Jsoup.parse(html)
 
-        val dateText = doc.select("div.gpvinfodetail b").firstOrNull()?.text() ?: ""
+            val summaryText = doc.select("div.gpvinfodetail").firstOrNull()?.text() ?: ""
+            val dateText = doc.select("div.gpvinfodetail b").firstOrNull()?.text() ?: ""
 
-        val tables = doc.select("table")
-        val slots = mutableListOf<TimeSlot>()
+            // Main schedule is in the horizontal table (class 'gpv-table' or first table)
+            val mainTable = doc.select("table.gpv-table").firstOrNull() ?: doc.select("table").firstOrNull()
+                ?: return resultMap
 
-        for (table in tables) {
-            val rows = table.select("tr")
+            val rows = mainTable.select("tr")
             for (row in rows) {
-                val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull()
-                    ?: continue
+                val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull() ?: continue
+                val rawQueueText = firstCell.text().trim()
 
-                val queueText = firstCell.text().trim()
-                val isMatch = queueText == targetQueue ||
-                        queueText.contains(targetQueue) ||
-                        Regex("""\b${Regex.escape(targetQueue)}\b""").containsMatchIn(queueText)
-                if (!isMatch) continue
+                // Extract queue number like "4.2", "6.1"
+                val match = Regex("""(\d\.\d)""").find(rawQueueText) ?: continue
+                val queueNum = match.groupValues[1]
 
-                // This is our row — parse all time slot cells
                 val cells = row.select("td.gpv-c")
+                if (cells.isEmpty()) continue
+
+                val slots = mutableListOf<TimeSlot>()
                 for (cell in cells) {
                     val title = cell.attr("title")
                     val classes = cell.classNames()
@@ -58,7 +57,6 @@ class ScheduleParser {
                         else -> SlotStatus.UNKNOWN
                     }
 
-                    // Parse time from title like "6.1: 08:00–08:30 — ..."
                     val timeMatch = Regex("""(\d{1,2}):(\d{2})""").find(title)
                     val startHour = timeMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
                     val startMinute = timeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
@@ -72,80 +70,132 @@ class ScheduleParser {
                         )
                     )
                 }
-                break // Found our queue row in this table, stop searching rows
+
+                val sortedSlots = slots.sortedWith(compareBy({ it.startHour }, { it.startMinute }))
+                val rawHash = md5(sortedSlots.joinToString { "${it.startHour}:${it.startMinute}=${it.status}" })
+
+                resultMap[queueNum] = DailySchedule(
+                    date = dateText,
+                    slots = sortedSlots,
+                    summaryText = summaryText,
+                    rawHash = rawHash
+                )
             }
-            if (slots.isNotEmpty()) break // Found today's data, stop searching tables
+        } catch (e: Exception) {
+            // Ignore parse errors and return whatever was parsed
         }
 
-        // Compute hash of the schedule to detect changes
-        val rawHash = md5(slots.joinToString { "${it.startHour}:${it.startMinute}=${it.status}" })
+        return resultMap
+    }
+
+    /**
+     * Parse the GPV HTML page to extract schedule for a target queue (defaults to 4.2).
+     */
+    fun parseGpvHtml(html: String, targetQueue: String = TARGET_QUEUE): DailySchedule {
+        val all = parseAllQueuesFromHtml(html)
+        if (all.containsKey(targetQueue)) {
+            return all[targetQueue]!!
+        }
+
+        // Fallback for custom / partial matches
+        val doc = Jsoup.parse(html)
+        val summaryText = doc.select("div.gpvinfodetail").firstOrNull()?.text() ?: ""
+        val dateText = doc.select("div.gpvinfodetail b").firstOrNull()?.text() ?: ""
+
+        val mainTable = doc.select("table.gpv-table").firstOrNull() ?: doc.select("table").firstOrNull()
+        val slots = mutableListOf<TimeSlot>()
+
+        if (mainTable != null) {
+            for (row in mainTable.select("tr")) {
+                val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull() ?: continue
+                val queueText = firstCell.text().trim()
+                if (queueText.contains(targetQueue)) {
+                    for (cell in row.select("td.gpv-c")) {
+                        val title = cell.attr("title")
+                        val classes = cell.classNames()
+
+                        val status = when {
+                            "gpv-s1" in classes -> SlotStatus.ON
+                            "gpv-s2" in classes -> SlotStatus.OFF
+                            "gpv-s3" in classes -> SlotStatus.SWITCHING
+                            else -> SlotStatus.UNKNOWN
+                        }
+
+                        val timeMatch = Regex("""(\d{1,2}):(\d{2})""").find(title)
+                        val startHour = timeMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                        val startMinute = timeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
+
+                        slots.add(
+                            TimeSlot(
+                                startHour = startHour,
+                                startMinute = startMinute,
+                                status = status,
+                                title = title
+                            )
+                        )
+                    }
+                    break
+                }
+            }
+        }
+
+        val sortedSlots = slots.sortedWith(compareBy({ it.startHour }, { it.startMinute }))
+        val rawHash = md5(sortedSlots.joinToString { "${it.startHour}:${it.startMinute}=${it.status}" })
 
         return DailySchedule(
             date = dateText,
-            slots = slots.sortedWith(compareBy({ it.startHour }, { it.startMinute })),
+            slots = sortedSlots,
             summaryText = summaryText,
             rawHash = rawHash
         )
     }
 
     /**
-     * Parses tomorrow's schedule if available in a second table or block on the page.
+     * Parses tomorrow's schedule if available in a distinct second table or block.
+     * Note: Ignores 'gpv-vtable' which is merely the mobile vertical view of today's schedule.
      */
     fun parseTomorrowGpvHtml(html: String, targetQueue: String = TARGET_QUEUE): DailySchedule? {
         val doc = Jsoup.parse(html)
-        val tables = doc.select("table")
-        if (tables.size < 2) return null
+        // Find only horizontal gpv-tables, not vertical mobile gpv-vtable
+        val gpvTables = doc.select("table.gpv-table")
+        if (gpvTables.size < 2) return null
 
-        // Usually table 1 is today, table 2 is tomorrow if published
-        var foundFirst = false
+        val tomorrowTable = gpvTables[1]
+        val rows = tomorrowTable.select("tr")
         var tomorrowSlots: List<TimeSlot>? = null
 
-        for (table in tables) {
-            val rows = table.select("tr")
-            for (row in rows) {
-                val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull() ?: continue
-                val queueText = firstCell.text().trim()
-                val isMatch = queueText == targetQueue ||
-                        queueText.contains(targetQueue) ||
-                        Regex("""\b${Regex.escape(targetQueue)}\b""").containsMatchIn(queueText)
-                if (isMatch) {
-                    if (!foundFirst) {
-                        foundFirst = true
-                        break
-                    } else {
-                        // Found second table's queue row!
-                        val slots = mutableListOf<TimeSlot>()
-                        val cells = row.select("td.gpv-c")
-                        for (cell in cells) {
-                            val title = cell.attr("title")
-                            val classes = cell.classNames()
+        for (row in rows) {
+            val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull() ?: continue
+            val queueText = firstCell.text().trim()
+            if (queueText.contains(targetQueue)) {
+                val slots = mutableListOf<TimeSlot>()
+                for (cell in row.select("td.gpv-c")) {
+                    val title = cell.attr("title")
+                    val classes = cell.classNames()
 
-                            val status = when {
-                                "gpv-s1" in classes -> SlotStatus.ON
-                                "gpv-s2" in classes -> SlotStatus.OFF
-                                "gpv-s3" in classes -> SlotStatus.SWITCHING
-                                else -> SlotStatus.UNKNOWN
-                            }
-
-                            val timeMatch = Regex("""(\d{1,2}):(\d{2})""").find(title)
-                            val startHour = timeMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
-                            val startMinute = timeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
-
-                            slots.add(
-                                TimeSlot(
-                                    startHour = startHour,
-                                    startMinute = startMinute,
-                                    status = status,
-                                    title = title
-                                )
-                            )
-                        }
-                        tomorrowSlots = slots.sortedWith(compareBy({ it.startHour }, { it.startMinute }))
-                        break
+                    val status = when {
+                        "gpv-s1" in classes -> SlotStatus.ON
+                        "gpv-s2" in classes -> SlotStatus.OFF
+                        "gpv-s3" in classes -> SlotStatus.SWITCHING
+                        else -> SlotStatus.UNKNOWN
                     }
+
+                    val timeMatch = Regex("""(\d{1,2}):(\d{2})""").find(title)
+                    val startHour = timeMatch?.groupValues?.get(1)?.toIntOrNull() ?: 0
+                    val startMinute = timeMatch?.groupValues?.get(2)?.toIntOrNull() ?: 0
+
+                    slots.add(
+                        TimeSlot(
+                            startHour = startHour,
+                            startMinute = startMinute,
+                            status = status,
+                            title = title
+                        )
+                    )
                 }
+                tomorrowSlots = slots.sortedWith(compareBy({ it.startHour }, { it.startMinute }))
+                break
             }
-            if (tomorrowSlots != null) break
         }
 
         if (tomorrowSlots.isNullOrEmpty()) return null
