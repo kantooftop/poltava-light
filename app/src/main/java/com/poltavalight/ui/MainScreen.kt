@@ -32,7 +32,17 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.poltavalight.data.*
+import com.poltavalight.data.CheckResult
+import com.poltavalight.data.DailySchedule
+import com.poltavalight.data.EmergencyEvent
+import com.poltavalight.data.LightWindow
+import com.poltavalight.data.SavedQueue
+import com.poltavalight.data.ScheduleBlock
+import com.poltavalight.data.ScheduleStats
+import com.poltavalight.data.SlotStatus
+import com.poltavalight.data.TimeSlot
+import com.poltavalight.data.formatDuration
+import com.poltavalight.data.groupSlotsIntoBlocks
 import com.poltavalight.ui.theme.*
 import kotlinx.coroutines.delay
 import java.util.Calendar
@@ -76,7 +86,7 @@ fun MainScreen(
     val currentTotalMinutes = currentHour * 60 + currentMinute
 
     // Active schedule based on selected day
-    val activeSchedule = remember(checkResult, selectedDayIndex) {
+    val activeSchedule: DailySchedule? = remember(checkResult, selectedDayIndex) {
         if (selectedDayIndex == 1 && checkResult?.tomorrowSchedule != null) {
             checkResult.tomorrowSchedule
         } else {
@@ -87,18 +97,19 @@ fun MainScreen(
     val hasTomorrowSchedule = checkResult?.tomorrowSchedule != null
 
     // Filter active GAV/SGAV
-    val activeEmergencies = remember(checkResult) {
-        checkResult?.emergencies?.filter { it.typeId == 1 || it.typeId == 2 } ?: emptyList()
+    val activeEmergencies: List<EmergencyEvent> = remember(checkResult) {
+        val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList()
+        list.filter { event: EmergencyEvent -> event.typeId == 1 || event.typeId == 2 }
     }
 
     // Slots & Blocks
-    val slots = activeSchedule?.slots ?: emptyList()
-    val blocks = remember(slots) { groupSlotsIntoBlocks(slots) }
+    val slots: List<TimeSlot> = activeSchedule?.slots ?: emptyList()
+    val blocks: List<ScheduleBlock> = remember(slots) { groupSlotsIntoBlocks(slots) }
 
     // Current slot (only valid for "today")
-    val currentSlot = remember(slots, currentTotalMinutes, selectedDayIndex) {
+    val currentSlot: TimeSlot? = remember(slots, currentTotalMinutes, selectedDayIndex) {
         if (selectedDayIndex == 0 && slots.isNotEmpty()) {
-            slots.find { slot ->
+            slots.find { slot: TimeSlot ->
                 val slotStart = slot.startHour * 60 + slot.startMinute
                 currentTotalMinutes in slotStart until (slotStart + 30)
             } ?: slots.firstOrNull()
@@ -107,12 +118,12 @@ fun MainScreen(
         }
     }
 
-    val currentStatus = currentSlot?.status ?: SlotStatus.UNKNOWN
+    val currentStatus: SlotStatus = currentSlot?.status ?: SlotStatus.UNKNOWN
 
     // Next change slot for countdown
-    val nextChangeSlot = remember(slots, currentTotalMinutes, selectedDayIndex, currentStatus) {
+    val nextChangeSlot: TimeSlot? = remember(slots, currentTotalMinutes, selectedDayIndex, currentStatus) {
         if (selectedDayIndex == 0) {
-            slots.find { slot ->
+            slots.find { slot: TimeSlot ->
                 val slotStart = slot.startHour * 60 + slot.startMinute
                 slotStart > currentTotalMinutes && slot.status != currentStatus
             }
