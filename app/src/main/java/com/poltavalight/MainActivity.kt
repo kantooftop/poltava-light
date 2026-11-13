@@ -27,6 +27,7 @@ import com.poltavalight.ui.MainScreen
 import com.poltavalight.ui.theme.PoltavaLightTheme
 import com.poltavalight.ui.theme.RevolutBlack
 import com.poltavalight.widget.LightAppWidgetProvider
+import com.poltavalight.widget.SplitAppWidgetProvider
 import kotlinx.coroutines.*
 
 class MainActivity : ComponentActivity() {
@@ -106,6 +107,7 @@ class MainActivity : ComponentActivity() {
                                 lastCheckTime = repository.getLastCheckTime()
                                 isLoading = false
                                 LightAppWidgetProvider.updateAllWidgets(this@MainActivity)
+                                SplitAppWidgetProvider.updateAllWidgets(this@MainActivity)
                             }
                         }
                     }

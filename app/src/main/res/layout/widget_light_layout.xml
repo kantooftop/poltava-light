@@ -29,12 +29,13 @@
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
-            <View
+            <!-- Divider replaced with ImageView for RemoteViews compatibility -->
+            <ImageView
                 android:layout_width="1dp"
                 android:layout_height="10dp"
                 android:layout_marginStart="8dp"
                 android:layout_marginEnd="8dp"
-                android:background="#2C2C2E" />
+                android:src="@drawable/widget_divider" />
 
             <!-- Status Dot -->
             <ImageView

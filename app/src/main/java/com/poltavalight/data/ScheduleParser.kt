@@ -40,7 +40,10 @@ class ScheduleParser {
                     ?: continue
 
                 val queueText = firstCell.text().trim()
-                if (queueText != targetQueue) continue
+                val isMatch = queueText == targetQueue ||
+                        queueText.contains(targetQueue) ||
+                        Regex("""\b${Regex.escape(targetQueue)}\b""").containsMatchIn(queueText)
+                if (!isMatch) continue
 
                 // This is our row — parse all time slot cells
                 val cells = row.select("td.gpv-c")
@@ -101,7 +104,11 @@ class ScheduleParser {
             val rows = table.select("tr")
             for (row in rows) {
                 val firstCell = row.select("td.gpv-q, th.gpv-q").firstOrNull() ?: continue
-                if (firstCell.text().trim() == targetQueue) {
+                val queueText = firstCell.text().trim()
+                val isMatch = queueText == targetQueue ||
+                        queueText.contains(targetQueue) ||
+                        Regex("""\b${Regex.escape(targetQueue)}\b""").containsMatchIn(queueText)
+                if (isMatch) {
                     if (!foundFirst) {
                         foundFirst = true
                         break

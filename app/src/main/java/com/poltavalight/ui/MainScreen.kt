@@ -7,8 +7,10 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Notifications
@@ -1010,51 +1012,112 @@ private fun QueueSelectionDialog(
     onDismiss: () -> Unit,
     onSelect: (SavedQueue) -> Unit
 ) {
+    val scrollState = rememberScrollState()
+
     AlertDialog(
         onDismissRequest = onDismiss,
         containerColor = RevolutCard,
         title = {
             Text(
-                text = "Оберіть чергу",
+                text = "Оберіть чергу (Полтавська обл.)",
                 color = RevolutTextPrimary,
-                fontWeight = FontWeight.Bold
+                fontWeight = FontWeight.Bold,
+                fontSize = 18.sp
             )
         },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                savedQueues.forEach { queue ->
-                    val isSelected = queue.queueNumber == currentQueueNumber
-                    Surface(
-                        shape = RoundedCornerShape(12.dp),
-                        color = if (isSelected) RevolutSecondary else Color.Transparent,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(12.dp))
-                            .clickable { onSelect(queue) }
-                            .border(
-                                1.dp,
-                                if (isSelected) PowerOn else RevolutCardBorder,
-                                RoundedCornerShape(12.dp)
-                            )
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                // Section: All 12 queues of Poltava region
+                Text(
+                    text = "Всі черги Полтавщини (ГПВ)",
+                    color = RevolutTextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+
+                // 6 queues x 2 subqueues grid
+                val queuePairs = listOf(
+                    "1.1" to "1.2",
+                    "2.1" to "2.2",
+                    "3.1" to "3.2",
+                    "4.1" to "4.2",
+                    "5.1" to "5.2",
+                    "6.1" to "6.2"
+                )
+
+                queuePairs.forEach { (q1, q2) ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Row(
-                            modifier = Modifier.padding(14.dp),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Text(
-                                text = "${queue.label} (Черга ${queue.queueNumber})",
-                                color = RevolutTextPrimary,
-                                fontSize = 14.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
-                            )
-                            if (isSelected) {
-                                Text(
-                                    text = "✓",
-                                    color = PowerOn,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 16.sp
+                        QueueButton(
+                            queueNumber = q1,
+                            isSelected = currentQueueNumber == q1,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onSelect(SavedQueue(id = q1, label = "Черга $q1", queueNumber = q1))
+                            }
+                        )
+                        QueueButton(
+                            queueNumber = q2,
+                            isSelected = currentQueueNumber == q2,
+                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                onSelect(SavedQueue(id = q2, label = "Черга $q2", queueNumber = q2))
+                            }
+                        )
+                    }
+                }
+
+                // Section: Saved bookmarks (if any)
+                if (savedQueues.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "Швидкі закладки",
+                        color = RevolutTextSecondary,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.SemiBold
+                    )
+
+                    savedQueues.forEach { queue ->
+                        val isSelected = queue.queueNumber == currentQueueNumber
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (isSelected) RevolutSecondary else Color.Transparent,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .clickable { onSelect(queue) }
+                                .border(
+                                    1.dp,
+                                    if (isSelected) PowerOn else RevolutCardBorder,
+                                    RoundedCornerShape(12.dp)
                                 )
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(12.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "${queue.label} (Черга ${queue.queueNumber})",
+                                    color = RevolutTextPrimary,
+                                    fontSize = 14.sp,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                )
+                                if (isSelected) {
+                                    Text(
+                                        text = "✓",
+                                        color = PowerOn,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 16.sp
+                                    )
+                                }
                             }
                         }
                     }
@@ -1067,6 +1130,49 @@ private fun QueueSelectionDialog(
             }
         }
     )
+}
+
+@Composable
+private fun QueueButton(
+    queueNumber: String,
+    isSelected: Boolean,
+    modifier: Modifier = Modifier,
+    onClick: () -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) PowerOn.copy(alpha = 0.2f) else RevolutSecondary,
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable { onClick() }
+            .border(
+                1.dp,
+                if (isSelected) PowerOn else RevolutCardBorder,
+                RoundedCornerShape(12.dp)
+            )
+    ) {
+        Row(
+            modifier = Modifier.padding(vertical = 12.dp, horizontal = 10.dp),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Черга $queueNumber",
+                color = if (isSelected) PowerOn else RevolutTextPrimary,
+                fontSize = 13.sp,
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold
+            )
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "✓",
+                    color = PowerOn,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    }
 }
 
 private fun getShortStatusLabel(status: SlotStatus): String {

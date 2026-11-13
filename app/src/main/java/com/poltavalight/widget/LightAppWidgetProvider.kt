@@ -40,6 +40,8 @@ class LightAppWidgetProvider : AppWidgetProvider() {
                 }
                 context.sendBroadcast(intent)
             }
+            // Also notify SplitAppWidgetProvider
+            SplitAppWidgetProvider.updateAllWidgets(context)
         }
     }
 
@@ -53,8 +55,23 @@ class LightAppWidgetProvider : AppWidgetProvider() {
         val queueLabel = repository.getSelectedQueueLabel()
         val lastCheck = repository.getLastCheckTime()
 
+        if (schedule == null || schedule.slots.isEmpty()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    repository.performCheck()
+                    updateAllWidgets(context)
+                } catch (e: Exception) {
+                    // Ignore network error on initial update
+                }
+            }
+        }
+
         for (appWidgetId in appWidgetIds) {
-            updateWidgetView(context, appWidgetManager, appWidgetId, schedule, queueLabel, lastCheck)
+            try {
+                updateWidgetView(context, appWidgetManager, appWidgetId, schedule, queueLabel, lastCheck)
+            } catch (e: Exception) {
+                // Prevent launcher crash
+            }
         }
     }
 

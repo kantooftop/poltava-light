@@ -23,6 +23,8 @@
     <string name="error_network">Помилка з\'єднання. Перевірте інтернет.</string>
     <string name="today">Сьогодні</string>
     <string name="tomorrow">Завтра</string>
-    <string name="widget_name">Полтава Світло (Віджет)</string>
+    <string name="widget_name">Полтава Світло (Детальний)</string>
     <string name="widget_description">Відображає поточний статус світла, таймер до зміни та графік.</string>
+    <string name="widget_split_name">Полтава Світло (Спліт-смужка)</string>
+    <string name="widget_split_description">Компактний подвійний віджет зі світлом та наступним вимкненням.</string>
 </resources>

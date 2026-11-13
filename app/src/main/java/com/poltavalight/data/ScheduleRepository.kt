@@ -34,6 +34,18 @@ class ScheduleRepository(private val context: Context) {
         private const val KEY_SAVED_QUEUES = "saved_queues_list"
 
         const val ACTION_SCHEDULE_UPDATED = "com.poltavalight.action.SCHEDULE_UPDATED"
+
+        /**
+         * All 12 queues (sub-queues) of Poltavaoblenergo across the Poltava region.
+         */
+        val ALL_POLTAVA_QUEUES = listOf(
+            "1.1", "1.2",
+            "2.1", "2.2",
+            "3.1", "3.2",
+            "4.1", "4.2",
+            "5.1", "5.2",
+            "6.1", "6.2"
+        )
     }
 
     /**
