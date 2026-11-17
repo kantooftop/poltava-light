@@ -12,14 +12,17 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowCompat
 import com.poltavalight.data.CheckResult
 import com.poltavalight.data.ScheduleRepository
 import com.poltavalight.ui.MainScreen
@@ -42,12 +45,28 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Notification permission launcher (Android 13+)
+    // Dynamic callback for notification permission requests
+    private var onNotificationPermissionResult: ((Boolean) -> Unit)? = null
+
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { /* proceeded */ }
+    ) { isGranted ->
+        onNotificationPermissionResult?.invoke(isGranted)
+        onNotificationPermissionResult = null
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // 1. Enable modern edge-to-edge with transparent system bars
+        enableEdgeToEdge()
+        WindowCompat.setDecorFitsSystemWindows(window, false)
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        window.navigationBarColor = android.graphics.Color.TRANSPARENT
+
+        // 2. Ensure status bar and navigation bar icons remain bright/light (white) on dark theme
+        val insetsController = WindowCompat.getInsetsController(window, window.decorView)
+        insetsController.isAppearanceLightStatusBars = false
+        insetsController.isAppearanceLightNavigationBars = false
+
         super.onCreate(savedInstanceState)
 
         repository = ScheduleRepository(this)
@@ -60,16 +79,6 @@ class MainActivity : ComponentActivity() {
             addAction(BatteryManager.ACTION_CHARGING)
         }
         registerReceiver(powerReceiver, filter)
-
-        // Request notification permission on Android 13+
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            if (ContextCompat.checkSelfPermission(
-                    this, Manifest.permission.POST_NOTIFICATIONS
-                ) != PackageManager.PERMISSION_GRANTED
-            ) {
-                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-            }
-        }
 
         // Request to disable battery optimization
         requestBatteryOptimizationExemption()
@@ -91,7 +100,7 @@ class MainActivity : ComponentActivity() {
                     var isLoading by remember {
                         mutableStateOf(checkResult?.schedule == null)
                     }
-                    var lastCheckTime by remember { mutableStateOf(repository.getLastCheckTime()) }
+                    var lastCheckTime by remember { mutableStateOf(repository.getRelativeUpdateTime()) }
                     var isNotificationsEnabled by remember { mutableStateOf(repository.isNotificationsEnabled()) }
                     val savedQueues = remember { repository.getSavedQueues() }
                     val isCharging by isChargingState
@@ -99,9 +108,7 @@ class MainActivity : ComponentActivity() {
                     val scope = rememberCoroutineScope()
 
                     fun refresh(queue: String = selectedQueueNumber) {
-                        if (checkResult?.schedule == null) {
-                            isLoading = true
-                        }
+                        isLoading = true
                         scope.launch(Dispatchers.IO) {
                             val result = repository.performCheck(queue)
                             if (result.schedule != null) {
@@ -112,7 +119,7 @@ class MainActivity : ComponentActivity() {
                             }
                             withContext(Dispatchers.Main) {
                                 checkResult = result
-                                lastCheckTime = repository.getLastCheckTime()
+                                lastCheckTime = repository.getRelativeUpdateTime()
                                 isLoading = false
                                 LightAppWidgetProvider.updateAllWidgets(this@MainActivity)
                                 SplitAppWidgetProvider.updateAllWidgets(this@MainActivity)
@@ -138,7 +145,6 @@ class MainActivity : ComponentActivity() {
                             selectedQueueLabel = queue.label
                             repository.setSelectedQueue(queue.queueNumber, queue.label)
 
-                            // Immediately switch to cached schedule for the selected queue
                             val cached = repository.getCachedCheckResult(queue.queueNumber)
                             if (cached.schedule != null) {
                                 checkResult = cached
@@ -146,9 +152,9 @@ class MainActivity : ComponentActivity() {
                             refresh(queue.queueNumber)
                         },
                         onToggleNotifications = {
-                            val newState = !isNotificationsEnabled
-                            isNotificationsEnabled = newState
-                            repository.setNotificationsEnabled(newState)
+                            handleNotificationToggle(isNotificationsEnabled) { newState ->
+                                isNotificationsEnabled = newState
+                            }
                         },
                         onRefresh = { refresh() },
                         onShare = { textToShare ->
@@ -163,6 +169,44 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /**
+     * Handles notification toggle with permission check on Android 13+ and Toast feedback.
+     */
+    private fun handleNotificationToggle(
+        currentEnabled: Boolean,
+        onStateChanged: (Boolean) -> Unit
+    ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            val hasPermission = ContextCompat.checkSelfPermission(
+                this, Manifest.permission.POST_NOTIFICATIONS
+            ) == PackageManager.PERMISSION_GRANTED
+
+            if (!hasPermission) {
+                // Not granted yet: request permission first, do not toggle silently
+                onNotificationPermissionResult = { granted ->
+                    if (granted) {
+                        repository.setNotificationsEnabled(true)
+                        onStateChanged(true)
+                        Toast.makeText(this, "Сповіщення увімкнено", Toast.LENGTH_SHORT).show()
+                    } else {
+                        repository.setNotificationsEnabled(false)
+                        onStateChanged(false)
+                        Toast.makeText(this, "Потрібен дозвіл для відправки сповіщень", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            }
+        }
+
+        // Permission already granted or Android < 13
+        val newState = !currentEnabled
+        repository.setNotificationsEnabled(newState)
+        onStateChanged(newState)
+        val msg = if (newState) "Сповіщення увімкнено" else "Сповіщення вимкнено"
+        Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
     }
 
     override fun onResume() {
@@ -189,9 +233,6 @@ class MainActivity : ComponentActivity() {
         isChargingState.value = isCharging
     }
 
-    /**
-     * Ask Android to exempt this app from battery optimization.
-     */
     private fun requestBatteryOptimizationExemption() {
         val pm = getSystemService(PowerManager::class.java)
         if (!pm.isIgnoringBatteryOptimizations(packageName)) {

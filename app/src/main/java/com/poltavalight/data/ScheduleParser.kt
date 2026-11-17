@@ -210,6 +210,19 @@ class ScheduleParser {
     }
 
     /**
+     * Safely reads a string from JSONObject, treating null, "null", "undefined" and whitespace as empty string.
+     */
+    private fun optCleanString(obj: JSONObject, key: String): String {
+        if (obj.isNull(key)) return ""
+        val value = obj.optString(key, "").trim()
+        return if (value.equals("null", ignoreCase = true) || value.equals("undefined", ignoreCase = true)) {
+            ""
+        } else {
+            value
+        }
+    }
+
+    /**
      * Parse emergency JSON response.
      */
     fun parseEmergencyJson(json: String): List<EmergencyEvent> {
@@ -228,16 +241,16 @@ class ScheduleParser {
                 val obj = arr.getJSONObject(i)
                 events.add(
                     EmergencyEvent(
-                        date = obj.optString("unloaddata", ""),
+                        date = optCleanString(obj, "unloaddata"),
                         beginHour = obj.optInt("beginhour", 0),
                         beginMinute = obj.optInt("beginminute", 0),
                         endHour = obj.optInt("endhour", 0),
                         endMinute = obj.optInt("endminute", 0),
-                        typeName = obj.optString("unloadingtypename", ""),
+                        typeName = optCleanString(obj, "unloadingtypename"),
                         typeId = obj.optInt("unloadingtypeid", 0),
-                        reasonName = obj.optString("unloadingreasonname", ""),
-                        note = obj.optString("note", ""),
-                        createdDate = obj.optString("createddate", ""),
+                        reasonName = optCleanString(obj, "unloadingreasonname"),
+                        note = optCleanString(obj, "note"),
+                        createdDate = optCleanString(obj, "createddate"),
                         volume = obj.optInt("volume", 0)
                     )
                 )
@@ -250,10 +263,11 @@ class ScheduleParser {
     }
 
     /**
-     * Check if there are active emergency outages (GAV or SGAV).
+     * Check if there are active emergency outages (GAV or SGAV) right now.
      */
-    fun hasActiveEmergency(events: List<EmergencyEvent>): Boolean {
-        return events.any { it.typeId == 1 || it.typeId == 2 }
+    fun hasActiveEmergency(events: List<EmergencyEvent>, currentTotalMinutes: Int = -1, cal: java.util.Calendar = java.util.Calendar.getInstance()): Boolean {
+        val totalMins = if (currentTotalMinutes >= 0) currentTotalMinutes else (cal.get(java.util.Calendar.HOUR_OF_DAY) * 60 + cal.get(java.util.Calendar.MINUTE))
+        return events.any { it.isCurrentlyActive(totalMins, cal) }
     }
 
     private fun md5(input: String): String {

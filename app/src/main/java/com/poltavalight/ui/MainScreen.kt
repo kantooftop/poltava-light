@@ -10,7 +10,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.rememberScrollState
@@ -19,13 +18,23 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
+import androidx.compose.material.icons.filled.Bolt
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.HourglassEmpty
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.NotificationsOff
+import androidx.compose.material.icons.filled.PowerOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ViewList
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.WarningAmber
+import androidx.compose.material.icons.filled.WifiOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -73,9 +82,10 @@ fun MainScreen(
     onRefresh: () -> Unit,
     onShare: (String) -> Unit
 ) {
-    var selectedDayIndex by remember { mutableIntStateOf(0) } // 0 = Сьогодні, 1 = Завтра
+    var selectedDayIndex by rememberSaveable { mutableIntStateOf(0) } // 0 = Сьогодні, 1 = Завтра
     var showQueueDialog by remember { mutableStateOf(false) }
-    var showPastSlots by remember { mutableStateOf(false) }
+    var showPastSlots by rememberSaveable { mutableStateOf(false) }
+    var isEmergencyDismissed by rememberSaveable { mutableStateOf(false) }
 
     // High precision ticking time for countdown
     var currentTimeMillis by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -105,10 +115,24 @@ fun MainScreen(
 
     val hasTomorrowSchedule = checkResult?.tomorrowSchedule != null
 
-    // Filter active emergency events (GAV / SGAV)
-    val activeEmergencies: List<EmergencyEvent> = remember(checkResult) {
-        val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList()
-        list.filter { event: EmergencyEvent -> event.typeId == 1 || event.typeId == 2 }
+    // Auto-poll tomorrow's schedule every 3 minutes while tomorrow tab is open without schedule
+    LaunchedEffect(selectedDayIndex, activeSchedule == null) {
+        if (selectedDayIndex == 1 && activeSchedule == null) {
+            while (true) {
+                delay(180_000L) // 3 minutes
+                onRefresh()
+            }
+        }
+    }
+
+    // Active emergencies: STRICTLY only on "Сьогодні" tab and only if genuinely active right now
+    val activeEmergencies: List<EmergencyEvent> = remember(checkResult, currentTotalMinutes, cal, selectedDayIndex, isEmergencyDismissed) {
+        if (selectedDayIndex != 0 || isEmergencyDismissed) {
+            emptyList()
+        } else {
+            val list: List<EmergencyEvent> = checkResult?.emergencies ?: emptyList()
+            list.filter { it.isCurrentlyActive(currentTotalMinutes, cal) }
+        }
     }
 
     // Slots & Blocks
@@ -169,11 +193,15 @@ fun MainScreen(
     val longestWindow = remember(activeSchedule) { activeSchedule?.findLongestLightWindow() }
 
     Scaffold(
-        containerColor = RevolutBlack
+        containerColor = RevolutBlack,
+        contentWindowInsets = WindowInsets(0, 0, 0, 0)
     ) { paddingValues ->
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .background(RevolutBlack)
+                .statusBarsPadding()
+                .navigationBarsPadding()
                 .padding(paddingValues)
         ) {
             LazyColumn(
@@ -183,7 +211,7 @@ fun MainScreen(
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
                 item {
-                    Spacer(modifier = Modifier.height(10.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
                     // Header: Queue capsule and animated day segmented switch
                     HeaderBar(
                         queueNumber = selectedQueueNumber,
@@ -206,10 +234,13 @@ fun MainScreen(
                     }
                 }
 
-                // Emergency GAV / SGAV Banner
-                if (activeEmergencies.isNotEmpty()) {
+                // Emergency GAV / SGAV Banner: ONLY on "Сьогодні" and when actively in effect
+                if (selectedDayIndex == 0 && activeEmergencies.isNotEmpty()) {
                     item {
-                        EmergencyBanner(events = activeEmergencies)
+                        EmergencyBanner(
+                            events = activeEmergencies,
+                            onDismiss = { isEmergencyDismissed = true }
+                        )
                     }
                 }
 
@@ -238,7 +269,6 @@ fun MainScreen(
                     item {
                         ActionButtonsRow(
                             isLoading = isLoading,
-                            lastCheckTime = lastCheckTime,
                             isNotificationsEnabled = isNotificationsEnabled,
                             onRefresh = onRefresh,
                             onToggleNotifications = onToggleNotifications,
@@ -258,8 +288,7 @@ fun MainScreen(
                                 schedule = activeSchedule,
                                 currentTotalMinutes = if (selectedDayIndex == 0) currentTotalMinutes else -1,
                                 stats = stats,
-                                longestWindow = longestWindow,
-                                onRefresh = onRefresh
+                                longestWindow = longestWindow
                             )
                         }
                     }
@@ -278,7 +307,7 @@ fun MainScreen(
                 }
 
                 item {
-                    Spacer(modifier = Modifier.height(28.dp))
+                    Spacer(modifier = Modifier.height(20.dp))
                 }
             }
 
@@ -346,7 +375,7 @@ private fun HeaderBar(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(6.dp)
+                        .size(7.dp)
                         .clip(CircleShape)
                         .background(PowerOn)
                 )
@@ -603,7 +632,7 @@ private fun HeroTimerCard(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // Main Large Tabular Countdown (better-typography: tnum prevents jitter)
+            // Main Large Tabular Countdown (better-typography: monospace prevents jitter)
             Text(
                 text = timerString,
                 color = RevolutTextPrimary,
@@ -637,7 +666,6 @@ private fun HeroTimerCard(
 @Composable
 private fun ActionButtonsRow(
     isLoading: Boolean,
-    lastCheckTime: String,
     isNotificationsEnabled: Boolean,
     onRefresh: () -> Unit,
     onToggleNotifications: () -> Unit,
@@ -747,8 +775,7 @@ private fun TimelineAndStatsCard(
     schedule: DailySchedule?,
     currentTotalMinutes: Int,
     stats: ScheduleStats?,
-    longestWindow: LightWindow?,
-    onRefresh: () -> Unit
+    longestWindow: LightWindow?
 ) {
     Surface(
         modifier = Modifier
@@ -826,7 +853,7 @@ private fun TimelineAndStatsCard(
                         }
                     }
 
-                    // Vertical White Needle with glowing indicator for Current Time
+                    // Vertical White Needle with indicator for Current Time
                     if (currentTotalMinutes in 0..1439) {
                         val markerFraction = currentTotalMinutes.toFloat() / 1440f
                         Box(
@@ -845,7 +872,7 @@ private fun TimelineAndStatsCard(
                     }
                 }
 
-                // Hour Markers (00, 04, 08, 12, 16, 20, 24)
+                // Hour Markers (00:00, 06:00, 12:00, 18:00, 24:00)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -865,25 +892,25 @@ private fun TimelineAndStatsCard(
                 if (stats != null) {
                     Spacer(modifier = Modifier.height(20.dp))
 
-                    // Bento Grid: Two balanced stat tiles
+                    // Bento Grid: Two balanced stat tiles with SVG Material Icons
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        // Tile 1: Hours ON
+                        // Tile 1: Hours ON with Bolt vector icon
                         BentoStatTile(
                             modifier = Modifier.weight(1f),
-                            icon = "⚡",
+                            icon = Icons.Default.Bolt,
                             title = "Зі світлом",
                             value = String.format(Locale.US, "%.1f", stats.hoursOn),
                             unit = "год",
                             color = PowerOn
                         )
 
-                        // Tile 2: Hours OFF
+                        // Tile 2: Hours OFF with PowerOff vector icon
                         BentoStatTile(
                             modifier = Modifier.weight(1f),
-                            icon = "🌑",
+                            icon = Icons.Default.PowerOff,
                             title = "Без світла",
                             value = String.format(Locale.US, "%.1f", stats.hoursOff),
                             unit = "год",
@@ -904,7 +931,12 @@ private fun TimelineAndStatsCard(
                                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 7.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(text = "⚠️", fontSize = 13.sp)
+                                Icon(
+                                    imageVector = Icons.Default.WarningAmber,
+                                    contentDescription = null,
+                                    tint = PowerSwitching,
+                                    modifier = Modifier.size(15.dp)
+                                )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = String.format(Locale.US, "%.1f год можливих відключень (жовті слоти)", stats.hoursSwitching),
@@ -916,7 +948,7 @@ private fun TimelineAndStatsCard(
                         }
                     }
 
-                    // Smart Planner Bento Card
+                    // Smart Planner Bento Card with Lightbulb vector icon
                     if (longestWindow != null) {
                         Spacer(modifier = Modifier.height(14.dp))
                         Surface(
@@ -936,7 +968,12 @@ private fun TimelineAndStatsCard(
                                     modifier = Modifier.size(38.dp)
                                 ) {
                                     Box(contentAlignment = Alignment.Center) {
-                                        Text(text = "💡", fontSize = 18.sp)
+                                        Icon(
+                                            imageVector = Icons.Default.Lightbulb,
+                                            contentDescription = null,
+                                            tint = PowerOn,
+                                            modifier = Modifier.size(20.dp)
+                                        )
                                     }
                                 }
 
@@ -982,7 +1019,7 @@ private fun TimelineAndStatsCard(
 @Composable
 private fun BentoStatTile(
     modifier: Modifier = Modifier,
-    icon: String,
+    icon: ImageVector,
     title: String,
     value: String,
     unit: String,
@@ -1002,7 +1039,12 @@ private fun BentoStatTile(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Text(text = title, color = RevolutTextSecondary, fontSize = 11.sp, fontWeight = FontWeight.Medium)
-                Text(text = icon, fontSize = 14.sp)
+                Icon(
+                    imageVector = icon,
+                    contentDescription = null,
+                    tint = color,
+                    modifier = Modifier.size(16.dp)
+                )
             }
             Spacer(modifier = Modifier.height(6.dp))
             Row(verticalAlignment = Alignment.Bottom) {
@@ -1232,7 +1274,12 @@ private fun VpnErrorBanner(
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(text = "⚠️", fontSize = 16.sp)
+                    Icon(
+                        imageVector = Icons.Default.WifiOff,
+                        contentDescription = null,
+                        tint = Color(0xFFFBBF24),
+                        modifier = Modifier.size(18.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Джерело недоступне (VPN/Регіон)",
@@ -1293,11 +1340,13 @@ private fun EmptyTomorrowCard(
                 .fillMaxWidth()
                 .padding(32.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Text(
-                text = "⏳",
-                fontSize = 42.sp
+            Icon(
+                imageVector = Icons.Default.HourglassEmpty,
+                contentDescription = null,
+                tint = RevolutTextSecondary,
+                modifier = Modifier.size(44.dp)
             )
             Text(
                 text = "Графік ще готується",
@@ -1306,7 +1355,7 @@ private fun EmptyTomorrowCard(
                 color = RevolutTextPrimary
             )
             Text(
-                text = "Полтаваобленерго зазвичай публікує графік на завтра у другій половині дня (після 18:00–20:00).",
+                text = "Полтаваобленерго зазвичай публікує графік на завтра у другій половині дня (після 18:00–20:00). Додаток перевіряє його автоматично кожні кілька хвилин.",
                 fontSize = 13.sp,
                 color = RevolutTextSecondary,
                 textAlign = TextAlign.Center,
@@ -1324,7 +1373,12 @@ private fun EmptyTomorrowCard(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(text = "🔄", fontSize = 14.sp)
+                    Icon(
+                        imageVector = Icons.Default.Refresh,
+                        contentDescription = null,
+                        tint = AccentBlue,
+                        modifier = Modifier.size(16.dp)
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = if (isLoading) "Перевірка..." else "Оновити графік",
@@ -1339,12 +1393,30 @@ private fun EmptyTomorrowCard(
 }
 
 // ====================================================================
-// EMERGENCY ALERT BANNER
+// EMERGENCY ALERT BANNER (Strictly sanitized, no null, with dismiss)
 // ====================================================================
 @Composable
-private fun EmergencyBanner(events: List<EmergencyEvent>) {
+private fun EmergencyBanner(
+    events: List<EmergencyEvent>,
+    onDismiss: () -> Unit
+) {
     val event = events.firstOrNull() ?: return
     val label = if (event.typeId == 2) "СГАВ" else "ГАВ"
+
+    // Construct clean details text without any "null", "undefined", or trailing dots
+    val detailsText = remember(event) {
+        buildList {
+            add("З ${event.beginHour}:${String.format(Locale.US, "%02d", event.beginMinute)}")
+            val cleanReason = event.reasonName.trim()
+            if (cleanReason.isNotBlank() && !cleanReason.equals("null", ignoreCase = true) && !cleanReason.equals("undefined", ignoreCase = true)) {
+                add(cleanReason)
+            }
+            val cleanNote = event.note.trim()
+            if (cleanNote.isNotBlank() && !cleanNote.equals("null", ignoreCase = true) && !cleanNote.equals("undefined", ignoreCase = true)) {
+                add(cleanNote)
+            }
+        }.joinToString(". ")
+    }
 
     Surface(
         modifier = Modifier
@@ -1357,19 +1429,38 @@ private fun EmergencyBanner(events: List<EmergencyEvent>) {
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(text = "🚨", fontSize = 24.sp)
+            Icon(
+                imageVector = Icons.Default.Warning,
+                contentDescription = null,
+                tint = PowerOff,
+                modifier = Modifier.size(24.dp)
+            )
             Spacer(modifier = Modifier.width(12.dp))
-            Column {
+            Column(modifier = Modifier.weight(1f)) {
                 Text(
                     text = "$label — Аварійне відключення!",
                     color = PowerOff,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Text(
-                    text = "З ${event.beginHour}:${String.format(Locale.US, "%02d", event.beginMinute)} ${event.reasonName}. ${event.note}".trim(),
-                    color = RevolutTextPrimary,
-                    fontSize = 12.sp
+                if (detailsText.isNotBlank()) {
+                    Text(
+                        text = detailsText,
+                        color = RevolutTextPrimary,
+                        fontSize = 12.sp,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
+            IconButton(
+                onClick = onDismiss,
+                modifier = Modifier.size(28.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Close,
+                    contentDescription = "Закрити",
+                    tint = RevolutTextSecondary,
+                    modifier = Modifier.size(18.dp)
                 )
             }
         }
@@ -1481,11 +1572,11 @@ private fun QueueButton(
             )
             if (isSelected) {
                 Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = "✓",
-                    color = PowerOn,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
+                Icon(
+                    imageVector = Icons.Default.Check,
+                    contentDescription = null,
+                    tint = PowerOn,
+                    modifier = Modifier.size(16.dp)
                 )
             }
         }

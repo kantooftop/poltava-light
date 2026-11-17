@@ -25,8 +25,10 @@ class ScheduleRepository(private val context: Context) {
         private const val KEY_LAST_SCHEDULE_HASH = "last_schedule_hash"
         private const val KEY_LAST_EMERGENCY_IDS = "last_emergency_ids"
         private const val KEY_LAST_CHECK_TIME = "last_check_time"
+        private const val KEY_LAST_CHECK_TIMESTAMP = "last_check_timestamp"
         private const val KEY_CACHED_SCHEDULE_DATE = "cached_schedule_date"
         private const val KEY_CACHED_SCHEDULE_SUMMARY = "cached_schedule_summary"
+        private const val KEY_CACHED_TOMORROW_DATE = "cached_tomorrow_date"
         private const val KEY_CACHED_EMERGENCIES_JSON = "cached_emergencies_json"
         private const val KEY_SELECTED_QUEUE = "selected_queue"
         private const val KEY_SELECTED_QUEUE_LABEL = "selected_queue_label"
@@ -104,12 +106,15 @@ class ScheduleRepository(private val context: Context) {
             val emergencies = parser.parseEmergencyJson(emergencyJson)
 
             val checkTime = currentTimeFormatted()
+            val now = System.currentTimeMillis()
             prefs.edit()
                 .putString(KEY_LAST_CHECK_TIME, checkTime)
+                .putLong(KEY_LAST_CHECK_TIMESTAMP, now)
                 .apply()
 
             // Cache all 12 queues for instant offline and cross-queue switching
             cacheAllQueues(allQueues, schedule.date, schedule.summaryText)
+            cacheTomorrowSchedule(tomorrowSchedule, queueNumber)
             cacheEmergencies(emergencies)
 
             // Broadcast update to widgets and components
@@ -123,10 +128,12 @@ class ScheduleRepository(private val context: Context) {
         } catch (e: Exception) {
             // On failure (e.g. VPN geo-block or offline), provide the cached data for selected queue
             val cachedSchedule = getCachedSchedule(queueNumber)
+            val cachedTomorrow = getCachedTomorrowSchedule(queueNumber)
             val cachedEmergencies = getCachedEmergencies()
 
             CheckResult(
                 schedule = cachedSchedule,
+                tomorrowSchedule = cachedTomorrow,
                 emergencies = cachedEmergencies,
                 error = e.localizedMessage ?: "Помилка зв'язку з сайтом обленерго"
             )
@@ -139,6 +146,7 @@ class ScheduleRepository(private val context: Context) {
     fun getCachedCheckResult(queueNumber: String = getSelectedQueueNumber()): CheckResult {
         return CheckResult(
             schedule = getCachedSchedule(queueNumber),
+            tomorrowSchedule = getCachedTomorrowSchedule(queueNumber),
             emergencies = getCachedEmergencies()
         )
     }
@@ -184,6 +192,24 @@ class ScheduleRepository(private val context: Context) {
 
     fun getLastCheckTime(): String {
         return prefs.getString(KEY_LAST_CHECK_TIME, "—") ?: "—"
+    }
+
+    /**
+     * Get user-friendly relative update time: e.g. "щойно", "15 хв тому", "2 год тому".
+     */
+    fun getRelativeUpdateTime(): String {
+        val lastTs = prefs.getLong(KEY_LAST_CHECK_TIMESTAMP, 0L)
+        if (lastTs == 0L) {
+            val t = prefs.getString(KEY_LAST_CHECK_TIME, "") ?: ""
+            return if (t.isNotEmpty()) t else "нещодавно"
+        }
+        val diffMinutes = ((System.currentTimeMillis() - lastTs) / (1000 * 60)).toInt()
+        return when {
+            diffMinutes < 1 -> "щойно"
+            diffMinutes < 60 -> "$diffMinutes хв тому"
+            diffMinutes < 1440 -> "${diffMinutes / 60} год тому"
+            else -> "понад добу тому"
+        }
     }
 
     private fun currentTimeFormatted(): String {
@@ -256,6 +282,59 @@ class ScheduleRepository(private val context: Context) {
         }
     }
 
+    private fun cacheTomorrowSchedule(tomorrow: DailySchedule?, queueNumber: String) {
+        try {
+            val editor = prefs.edit()
+            if (tomorrow != null && tomorrow.slots.isNotEmpty()) {
+                editor.putString(KEY_CACHED_TOMORROW_DATE, tomorrow.date)
+                val arr = JSONArray()
+                for (slot in tomorrow.slots) {
+                    val obj = JSONObject()
+                    obj.put("h", slot.startHour)
+                    obj.put("m", slot.startMinute)
+                    obj.put("s", slot.status.name)
+                    obj.put("t", slot.title)
+                    arr.put(obj)
+                }
+                editor.putString("cached_tomorrow_slots_$queueNumber", arr.toString())
+            } else {
+                editor.remove("cached_tomorrow_slots_$queueNumber")
+                editor.remove(KEY_CACHED_TOMORROW_DATE)
+            }
+            editor.apply()
+        } catch (e: Exception) {
+            // Ignore
+        }
+    }
+
+    fun getCachedTomorrowSchedule(queueNumber: String = getSelectedQueueNumber()): DailySchedule? {
+        val raw = prefs.getString("cached_tomorrow_slots_$queueNumber", null) ?: return null
+        return try {
+            val arr = JSONArray(raw)
+            val slots = mutableListOf<TimeSlot>()
+            for (i in 0 until arr.length()) {
+                val obj = arr.getJSONObject(i)
+                slots.add(
+                    TimeSlot(
+                        startHour = obj.getInt("h"),
+                        startMinute = obj.getInt("m"),
+                        status = SlotStatus.valueOf(obj.getString("s")),
+                        title = obj.optString("t", "")
+                    )
+                )
+            }
+            if (slots.isEmpty()) return null
+            val date = prefs.getString(KEY_CACHED_TOMORROW_DATE, "Завтра") ?: "Завтра"
+            DailySchedule(
+                date = date,
+                slots = slots,
+                summaryText = "Опубліковано графік на завтра"
+            )
+        } catch (e: Exception) {
+            null
+        }
+    }
+
     private fun cacheEmergencies(emergencies: List<EmergencyEvent>) {
         try {
             val arr = JSONArray()
@@ -279,6 +358,16 @@ class ScheduleRepository(private val context: Context) {
         }
     }
 
+    private fun cleanStr(value: String?): String {
+        if (value == null) return ""
+        val trimmed = value.trim()
+        return if (trimmed.equals("null", ignoreCase = true) || trimmed.equals("undefined", ignoreCase = true)) {
+            ""
+        } else {
+            trimmed
+        }
+    }
+
     fun getCachedEmergencies(): List<EmergencyEvent> {
         val raw = prefs.getString(KEY_CACHED_EMERGENCIES_JSON, null) ?: return emptyList()
         return try {
@@ -288,15 +377,15 @@ class ScheduleRepository(private val context: Context) {
                 val obj = arr.getJSONObject(i)
                 list.add(
                     EmergencyEvent(
-                        date = obj.optString("date", ""),
+                        date = cleanStr(obj.optString("date", "")),
                         beginHour = obj.optInt("bh", 0),
                         beginMinute = obj.optInt("bm", 0),
                         endHour = obj.optInt("eh", 0),
                         endMinute = obj.optInt("em", 0),
-                        typeName = obj.optString("tn", ""),
+                        typeName = cleanStr(obj.optString("tn", "")),
                         typeId = obj.optInt("ti", 0),
-                        reasonName = obj.optString("rn", ""),
-                        note = obj.optString("note", ""),
+                        reasonName = cleanStr(obj.optString("rn", "")),
+                        note = cleanStr(obj.optString("note", "")),
                         createdDate = "",
                         volume = obj.optInt("vol", 0)
                     )

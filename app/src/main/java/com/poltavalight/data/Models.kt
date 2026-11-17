@@ -221,7 +221,52 @@ data class EmergencyEvent(
     val note: String,
     val createdDate: String,
     val volume: Int
-)
+) {
+    /**
+     * Determines whether this emergency event is genuinely currently active.
+     */
+    fun isCurrentlyActive(currentTotalMinutes: Int, cal: java.util.Calendar): Boolean {
+        // Only GAV (typeId == 1) or SGAV (typeId == 2)
+        if (typeId != 1 && typeId != 2) return false
+
+        // Check for cancellation keywords in text
+        val combined = "$note $reasonName $typeName".lowercase(Locale.ROOT)
+        if (combined.contains("скасован") || 
+            combined.contains("відбій") || 
+            combined.contains("відмін") || 
+            combined.contains("припинен")) {
+            return false
+        }
+
+        // Date check: ensure event is from today
+        if (date.isNotBlank() && !date.equals("null", ignoreCase = true)) {
+            val d = cal.get(java.util.Calendar.DAY_OF_MONTH)
+            val m = cal.get(java.util.Calendar.MONTH) + 1
+            val y = cal.get(java.util.Calendar.YEAR)
+            val todayFormat1 = String.format(Locale.US, "%02d-%02d-%04d", d, m, y)
+            val todayFormat2 = String.format(Locale.US, "%02d.%02d.%04d", d, m, y)
+            if (!date.contains(todayFormat1) && !date.contains(todayFormat2)) {
+                return false
+            }
+        }
+
+        // End time check: if a non-placeholder end time was specified and passed
+        if ((endHour > 0 || endMinute > 0) && !(endHour == 23 && endMinute == 59)) {
+            val endMins = endHour * 60 + endMinute
+            if (currentTotalMinutes >= endMins) {
+                return false
+            }
+        }
+
+        // Start time check
+        val startMins = beginHour * 60 + beginMinute
+        if (currentTotalMinutes < startMins) {
+            return false
+        }
+
+        return true
+    }
+}
 
 /**
  * Combined result of checking the POE website.
