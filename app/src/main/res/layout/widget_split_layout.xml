@@ -13,21 +13,26 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="@drawable/widget_split_top_green"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp">
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
-        <!-- Queue Number in Top-Left Corner -->
+        <!-- Queue Number Badge in Top-Left Corner -->
         <TextView
             android:id="@+id/widget_split_queue"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentStart="true"
             android:layout_alignParentTop="true"
+            android:background="@drawable/widget_split_queue_badge"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
             android:text="4.2"
-            android:textColor="#000000"
-            android:textSize="13sp"
+            android:textColor="#FFFFFF"
+            android:textSize="11sp"
             android:textStyle="bold" />
 
         <!-- Center: Icon + Time Interval -->
@@ -51,11 +56,17 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:text="13:00 - 16:30"
-                android:textColor="#000000"
-                android:textSize="19sp"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>
     </RelativeLayout>
+
+    <!-- Subtle Divider Line -->
+    <ImageView
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:background="#25000000" />
 
     <!-- Bottom Half (Next Period) -->
     <RelativeLayout
@@ -64,10 +75,10 @@
         android:layout_height="0dp"
         android:layout_weight="1"
         android:background="@drawable/widget_split_bottom_red"
-        android:paddingStart="12dp"
-        android:paddingEnd="12dp"
-        android:paddingTop="6dp"
-        android:paddingBottom="6dp">
+        android:paddingStart="14dp"
+        android:paddingEnd="14dp"
+        android:paddingTop="8dp"
+        android:paddingBottom="8dp">
 
         <!-- Center: Icon + Time Interval -->
         <LinearLayout
@@ -90,10 +101,9 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="10dp"
                 android:text="16:30 - 19:00"
-                android:textColor="#000000"
-                android:textSize="19sp"
+                android:textColor="#FFFFFF"
+                android:textSize="20sp"
                 android:textStyle="bold" />
         </LinearLayout>
     </RelativeLayout>
 </LinearLayout>
-

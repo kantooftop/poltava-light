@@ -153,33 +153,17 @@ class LightAppWidgetProvider : AppWidgetProvider() {
 
         val currentStatus = currentSlot?.status ?: SlotStatus.UNKNOWN
 
-        // Status text & colors
-        when (currentStatus) {
-            SlotStatus.ON -> {
-                views.setTextViewText(R.id.widget_status_text, "Світло є")
-                views.setTextColor(R.id.widget_status_text, Color.parseColor("#00D180"))
-                views.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_dot_on)
-                views.setTextViewText(R.id.widget_timer_text, "Світло є")
-            }
-            SlotStatus.OFF -> {
-                views.setTextViewText(R.id.widget_status_text, "Світла немає")
-                views.setTextColor(R.id.widget_status_text, Color.parseColor("#FF3B5C"))
-                views.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_dot_off)
-                views.setTextViewText(R.id.widget_timer_text, "Світла немає")
-            }
-            SlotStatus.SWITCHING -> {
-                views.setTextViewText(R.id.widget_status_text, "Перемикання")
-                views.setTextColor(R.id.widget_status_text, Color.parseColor("#FFB800"))
-                views.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_dot_switching)
-                views.setTextViewText(R.id.widget_timer_text, "Перемикання")
-            }
-            SlotStatus.UNKNOWN -> {
-                views.setTextViewText(R.id.widget_status_text, "Невідомо")
-                views.setTextColor(R.id.widget_status_text, Color.parseColor("#8E8E93"))
-                views.setImageViewResource(R.id.widget_status_dot, R.drawable.widget_dot_switching)
-                views.setTextViewText(R.id.widget_timer_text, "Невідомо")
-            }
+        // Status text & colors (OKLCH-tuned palette)
+        val (statusColorHex, statusLabel, statusDotRes) = when (currentStatus) {
+            SlotStatus.ON -> Triple("#00E599", "Світло є", R.drawable.widget_dot_on)
+            SlotStatus.OFF -> Triple("#FF3366", "Світла немає", R.drawable.widget_dot_off)
+            SlotStatus.SWITCHING -> Triple("#FFB020", "Перемикання", R.drawable.widget_dot_switching)
+            SlotStatus.UNKNOWN -> Triple("#94A3B8", "Невідомо", R.drawable.widget_dot_switching)
         }
+
+        views.setTextViewText(R.id.widget_status_text, statusLabel)
+        views.setTextColor(R.id.widget_status_text, Color.parseColor(statusColorHex))
+        views.setImageViewResource(R.id.widget_status_dot, statusDotRes)
 
         // Find next status transition
         val nextSlot = schedule.slots.find { slot ->
@@ -198,28 +182,32 @@ class LightAppWidgetProvider : AppWidgetProvider() {
                 else -> "через $remM хв"
             }
             val nextTimeFormatted = String.format(Locale.US, "%02d:%02d", nextSlot.startHour, nextSlot.startMinute)
-            views.setTextViewText(
-                R.id.widget_subtitle_text,
-                "Зміна о $nextTimeFormatted • $durationText"
-            )
+
+            val heroAction = when (nextSlot.status) {
+                SlotStatus.OFF -> "Вимкнення о $nextTimeFormatted"
+                SlotStatus.ON -> "Світло о $nextTimeFormatted"
+                SlotStatus.SWITCHING -> "Перемикання о $nextTimeFormatted"
+                else -> "Зміна о $nextTimeFormatted"
+            }
+
+            views.setTextViewText(R.id.widget_timer_text, heroAction)
+            views.setTextViewText(R.id.widget_subtitle_text, "Залишилось: $durationText")
         } else {
-            views.setTextViewText(
-                R.id.widget_subtitle_text,
-                "До кінця доби змін немає"
-            )
+            views.setTextViewText(R.id.widget_timer_text, statusLabel)
+            views.setTextViewText(R.id.widget_subtitle_text, "До кінця доби змін немає")
         }
 
         // Find next 2 blocks for bottom row
         val blocks = groupSlotsIntoBlocks(schedule.slots)
         val futureBlocks = blocks.filter { (it.endHour * 60 + it.endMinute) > curTotalMin }
         val nextEventsStr = futureBlocks.take(2).joinToString(" • ") { b ->
-            val statusLabel = when (b.status) {
+            val blockLabel = when (b.status) {
                 SlotStatus.ON -> "Світло"
                 SlotStatus.OFF -> "Вимкнення"
                 SlotStatus.SWITCHING -> "Перемикання"
                 SlotStatus.UNKNOWN -> "—"
             }
-            String.format(Locale.US, "%02d:%02d %s", b.startHour, b.startMinute, statusLabel)
+            String.format(Locale.US, "%02d:%02d %s", b.startHour, b.startMinute, blockLabel)
         }
         if (nextEventsStr.isNotBlank()) {
             views.setTextViewText(R.id.widget_next_events, "Далі: $nextEventsStr")

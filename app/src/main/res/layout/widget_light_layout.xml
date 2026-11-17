@@ -7,7 +7,7 @@
     android:orientation="vertical"
     android:padding="16dp">
 
-    <!-- Top Row: Queue, Status, Refresh Button -->
+    <!-- Top Row: Queue Capsule, Status Badge & Refresh Button -->
     <RelativeLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content">
@@ -20,24 +20,29 @@
             android:gravity="center_vertical"
             android:orientation="horizontal">
 
+            <!-- Queue Pill -->
             <TextView
                 android:id="@+id/widget_queue_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
+                android:background="@drawable/widget_queue_pill"
+                android:paddingStart="9dp"
+                android:paddingEnd="9dp"
+                android:paddingTop="3dp"
+                android:paddingBottom="3dp"
                 android:text="Черга 6.1"
-                android:textColor="#8E8E93"
+                android:textColor="#FFFFFF"
                 android:textSize="12sp"
                 android:textStyle="bold" />
 
-            <!-- Divider replaced with ImageView for RemoteViews compatibility -->
             <ImageView
                 android:layout_width="1dp"
-                android:layout_height="10dp"
+                android:layout_height="12dp"
                 android:layout_marginStart="8dp"
                 android:layout_marginEnd="8dp"
                 android:src="@drawable/widget_divider" />
 
-            <!-- Status Dot -->
+            <!-- Status Dot with pulse glow color -->
             <ImageView
                 android:id="@+id/widget_status_dot"
                 android:layout_width="8dp"
@@ -51,7 +56,7 @@
                 android:layout_height="wrap_content"
                 android:layout_marginStart="6dp"
                 android:text="Світло є"
-                android:textColor="#00D180"
+                android:textColor="#00E599"
                 android:textSize="13sp"
                 android:textStyle="bold" />
         </LinearLayout>
@@ -65,11 +70,11 @@
             android:layout_centerVertical="true"
             android:background="@drawable/widget_button_bg"
             android:contentDescription="@string/refresh"
-            android:padding="6dp"
+            android:padding="7dp"
             android:src="@drawable/ic_refresh_widget" />
     </RelativeLayout>
 
-    <!-- Center Hero Section: Big Countdown / Change Time -->
+    <!-- Center Hero Section: Countdown & Actionable Transition Time -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
@@ -77,34 +82,39 @@
         android:gravity="center_vertical"
         android:orientation="vertical"
         android:paddingTop="6dp"
-        android:paddingBottom="4dp">
+        android:paddingBottom="6dp">
 
         <TextView
             android:id="@+id/widget_timer_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="Світло є"
+            android:text="Вимкнення о 16:00"
             android:textColor="#FFFFFF"
-            android:textSize="24sp"
+            android:textSize="22sp"
             android:textStyle="bold" />
 
         <TextView
             android:id="@+id/widget_subtitle_text"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginTop="2dp"
-            android:text="Зміна о 14:30 • через 1 год 29 хв"
-            android:textColor="#8E8E93"
+            android:layout_marginTop="3dp"
+            android:text="Залишилось: через 19 хв"
+            android:textColor="#94A3B8"
             android:textSize="13sp" />
     </LinearLayout>
 
-    <!-- Bottom Row: Next Events & Sync Time -->
+    <!-- Bottom Row: Sleek Chip with Next Events & Sync Time -->
     <LinearLayout
         android:id="@+id/widget_bottom_container"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="@drawable/widget_chip_bg"
         android:gravity="center_vertical"
-        android:orientation="horizontal">
+        android:orientation="horizontal"
+        android:paddingStart="10dp"
+        android:paddingEnd="10dp"
+        android:paddingTop="6dp"
+        android:paddingBottom="6dp">
 
         <TextView
             android:id="@+id/widget_next_events"
@@ -113,8 +123,8 @@
             android:layout_weight="1"
             android:ellipsize="end"
             android:maxLines="1"
-            android:text="Далі: 14:30 Перемикання • 15:00 Світло"
-            android:textColor="#8E8E93"
+            android:text="Далі: 16:00 Вимкнення • 20:00 Світло"
+            android:textColor="#94A3B8"
             android:textSize="11sp" />
 
         <TextView
@@ -122,9 +132,8 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_marginStart="8dp"
-            android:text="Оновлено: 14:30"
-            android:textColor="#636366"
+            android:text="15:41"
+            android:textColor="#64748B"
             android:textSize="10sp" />
     </LinearLayout>
 </LinearLayout>
-
